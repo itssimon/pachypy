@@ -1,0 +1,8 @@
+- pipeline: test1_pipeline
+  transform:
+    image: alpine:latest
+    cmd: ["/bin/sh", "-c", "date > /pfs/out/date"]
+  input:
+    cron:
+      name: tick
+      spec: 0 * * * *
