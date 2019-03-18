@@ -6,6 +6,7 @@ setup(
     author='Simon Gurcke',
     packages=find_packages(),
     install_requires=[
-        'pandas', 'pyyaml', 'tzlocal', 'termcolor'
+        'pandas', 'pyyaml', 'tzlocal', 'termcolor',
+        'python_pachyderm'
     ]
 )

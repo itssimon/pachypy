@@ -1,0 +1,2 @@
+class PipelineSpecTransformer:
+    pass

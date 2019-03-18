@@ -1,3 +1,4 @@
 # flake8: noqa
 
-from .pps import *
+from .pachyderm import PachydermClient
+from .registry import DockerRegistry, AmazonECRRegistry
