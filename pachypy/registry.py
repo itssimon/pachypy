@@ -25,8 +25,8 @@ class ContainerRegistry:
         """Retrieve the latest image digest.
 
         Args:
-            repository (str): Repository.
-            tag (str): Tag.
+            repository: Repository.
+            tag: Tag.
         """
         raise NotImplementedError
 
@@ -41,7 +41,7 @@ class DockerRegistry(ContainerRegistry):
 
     Args:
         registry_host: Hostname of Docker registry. Defaults to Docker Hub.
-        auth: Docker auth token. Will try to read this from ~/.docker/config.json if not specified. Run `docker login` before relying on it. (optional)
+        auth: Docker auth token. Will try to read this from ~/.docker/config.json if not specified. Run `docker login` before relying on it.
     """
 
     def __init__(self, registry_host: str = 'index.docker.io', auth: Optional[str] = None):
@@ -85,8 +85,8 @@ class AmazonECRRegistry(ContainerRegistry):
     """Amazon Elastic Container Registry (ECR) handler using boto3.
 
     Args:
-        aws_access_key_id: AWS access key ID. (optional)
-        aws_secret_access_key: AWS secret access key. (optional)
+        aws_access_key_id: AWS access key ID.
+        aws_secret_access_key: AWS secret access key.
     """
 
     def __init__(self, aws_access_key_id: Optional[str] = None, aws_secret_access_key: Optional[str] = None):
