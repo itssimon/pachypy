@@ -96,7 +96,8 @@ class PachydermClientBase:
 
 class PachydermClient(PachydermClientBase):
 
-    def __init__(self, host='localhost', port=30650, container_registry='docker'):
+    def __init__(self, host='localhost', port=30650, container_registry='docker', update_image_digests=True,
+                 pipeline_spec_files=None, pipeline_spec_transformer=None, cprint=True):
         super().__init__(host=host, port=port)
 
         if container_registry == 'docker':
@@ -109,6 +110,11 @@ class PachydermClient(PachydermClientBase):
             self.container_registry = DockerRegistry(container_registry)
         else:
             self.container_registry = None
+
+        self.update_image_digests = update_image_digests
+        self.pipeline_spec_files = pipeline_spec_files
+        self.pipeline_spec_transformer = pipeline_spec_transformer
+        self.cprint = cprint
 
         try:
             from IPython import get_ipython
@@ -236,11 +242,11 @@ class PachydermClient(PachydermClientBase):
         for pipeline in self._list_pipeline_names(pipelines):
             logs.append(super().get_logs(pipeline=pipeline))
         if len(logs) == 0:
-            cprint('No logs found', 'red')
+            self._cprint('No logs found', 'red')
             return None
         df = pd.concat(logs, ignore_index=True).reset_index()
         if len(df) == 0:
-            cprint('No logs found', 'red')
+            self._cprint('No logs found', 'red')
             return None
 
         df = df[df['job'].notna()]
@@ -265,72 +271,33 @@ class PachydermClient(PachydermClientBase):
             for _, row in df.iterrows():
                 if row.job != job:
                     print()
-                    cprint(f' Pipeline {row.pipeline} | Job {row.job} ', 'yellow', 'on_grey')
+                    self._cprint(f' Pipeline {row.pipeline} | Job {row.job} ', 'yellow', 'on_grey')
                 if row.worker != worker:
-                    cprint(f' Worker {row.worker} ', 'white', 'on_grey')
+                    self._cprint(f' Worker {row.worker} ', 'white', 'on_grey')
                 color = 'grey' if row.user else 'blue'
                 message = row.message
                 if message.startswith('WARNING'):
                     color = 'magenta'
                 elif message.startswith('ERROR'):
                     color = 'red'
-                cprint(f'[{row.ts}] {message}', color)
+                self._cprint(f'[{row.ts}] {message}', color)
                 job = row.job
                 worker = row.worker
 
         if return_df:
             return df
 
-    def read_pipeline_specs(self, files='pipelines/*.yaml', pipelines='*', update_image_digests=True):
-        if isinstance(files, str):
-            files = glob(os.path.expanduser(files))
-        if pipelines is None:
-            pipelines = '*'
+    def create_or_update_pipelines(self, pipelines='*', pipeline_specs=None, recreate=False, reprocess=False):
+        if pipeline_specs is None:
+            pipeline_specs = self.read_pipeline_specs(pipelines)
+        else:
+            if not isinstance(pipeline_specs, list):
+                pipeline_specs = [pipeline_specs]
+            if isinstance(pipelines, str) and pipelines != '*':
+                pipeline_specs = [p for p in pipeline_specs if fnmatch(p['pipeline']['name'], pipelines)]
+            elif isinstance(pipelines, list):
+                pipeline_specs = [p for p in pipeline_specs if p['pipeline']['name'] in set(pipelines)]
 
-        assert isinstance(files, list)
-        pipeline_specs = []
-
-        # Subset list of files
-        files_subset = [f for f in files if fnmatch(os.path.basename(f), pipelines) or pipelines.startswith(os.path.splitext(os.path.basename(f))[0])]
-        if len(files_subset) > 0:
-            files = files_subset
-        cprint(f'Reading pipeline specifications from {len(files)} files', 'yellow')
-
-        # Read pipeline specs from files
-        for file in set(files):
-            with open(file, 'r') as f:
-                file_content = yaml.safe_load(f)
-                if not isinstance(file_content, list):
-                    raise TypeError(f'File {os.path.basename(file)} does not contain a list')
-                pipeline_specs.extend(file_content)
-
-        # Transform pipeline specs to meet the Pachyderm specification format
-        pipeline_specs = pipeline_specs if isinstance(pipeline_specs, list) else [pipeline_specs]
-        previous_image = None
-        for pipeline in pipeline_specs:
-            if isinstance(pipeline['pipeline'], str):
-                pipeline['pipeline'] = {'name': pipeline['pipeline']}
-            if 'image' not in pipeline['transform'] and previous_image is not None:
-                pipeline['transform']['image'] = previous_image
-            previous_image = pipeline['transform']['image']
-
-        # Filter pipelines according to pipelines parameter (with wildcards)
-        if pipelines != '*':
-            pipeline_specs = [p for p in pipeline_specs if fnmatch(p['pipeline']['name'], pipelines)]
-
-        if update_image_digests:
-            assert isinstance(self.container_registry, Registry), 'container_registry must be set in order to update image digests'
-            for pipeline in pipeline_specs:
-                repository, tag, digest = _split_image_string(pipeline['transform']['image'])
-                digest = self.container_registry.get_image_digest(repository, tag)
-                if digest is not None:
-                    pipeline['transform']['image'] = f'{repository}:{tag}@{digest}'
-
-        cprint(f'Matched specification for {len(pipeline_specs)} pipelines', 'green' if len(pipeline_specs) > 0 else 'red')
-        return pipeline_specs
-
-    def create_or_update_pipelines(self, pipeline_specs, recreate=False, reprocess=False):
-        pipeline_specs = pipeline_specs if isinstance(pipeline_specs, list) else [pipeline_specs]
         existing_pipelines = set(self._list_pipeline_names())
         updated_pipelines = []
 
@@ -341,15 +308,21 @@ class PachydermClient(PachydermClientBase):
         for pipeline_spec in pipeline_specs:
             pipeline = pipeline_spec['pipeline']['name']
             if pipeline in existing_pipelines and not recreate:
-                cprint(f'Updating pipeline {pipeline}', 'yellow')
+                self._cprint(f'Updating pipeline {pipeline}', 'yellow')
                 self.pps_client.stub.CreatePipeline(CreatePipelineRequest(update=True, reprocess=reprocess, **pipeline_specs))
             else:
-                cprint(f'Creating pipeline {pipeline}', 'yellow')
+                self._cprint(f'Creating pipeline {pipeline}', 'yellow')
                 self.pps_client.stub.CreatePipeline(CreatePipelineRequest(**pipeline_specs))
             updated_pipelines.append(pipeline)
 
         self._list_pipeline_names.cache_clear()
         return updated_pipelines
+
+    def create_pipelines(self, pipelines='*', pipeline_specs=None, recreate=False):
+        return self.create_or_update_pipelines(pipelines=pipelines, pipeline_specs=pipeline_specs, recreate=recreate, reprocess=False)
+
+    def update_pipelines(self, pipelines='*', pipeline_specs=None, recreate=False, reprocess=False):
+        return self.create_or_update_pipelines(pipelines=pipelines, pipeline_specs=pipeline_specs, recreate=recreate, reprocess=reprocess)
 
     def delete_pipelines(self, pipelines):
         pipelines = pipelines if isinstance(pipelines, list) else self._list_pipeline_names(pipelines)
@@ -359,11 +332,11 @@ class PachydermClient(PachydermClientBase):
         # Delete existing pipelines in reverse order
         for pipeline in pipelines[::-1]:
             if pipeline in existing_pipelines:
-                cprint(f'Deleting pipeline {pipeline}', 'yellow')
+                self._cprint(f'Deleting pipeline {pipeline}', 'yellow')
                 self.pps_client.stub.DeletePipeline(DeletePipelineRequest(pipeline=Pipeline(name=pipeline)))
                 deleted_pipelines.append(pipeline)
             else:
-                cprint(f'Pipeline {pipeline} does not exist', 'yellow')
+                self._cprint(f'Pipeline {pipeline} does not exist', 'yellow')
 
         self._list_pipeline_names.cache_clear()
         return deleted_pipelines
@@ -375,11 +348,11 @@ class PachydermClient(PachydermClientBase):
 
         for pipeline in pipelines:
             if pipeline in existing_pipelines:
-                cprint(f'Starting pipeline {pipeline}', 'yellow')
+                self._cprint(f'Starting pipeline {pipeline}', 'yellow')
                 self.pps_client.start_pipeline(pipeline)
                 started_pipelines.append(pipeline)
             else:
-                cprint(f'Pipeline {pipeline} does not exist', 'yellow')
+                self._cprint(f'Pipeline {pipeline} does not exist', 'yellow')
 
         return started_pipelines
 
@@ -390,23 +363,100 @@ class PachydermClient(PachydermClientBase):
 
         for pipeline in pipelines:
             if pipeline in existing_pipelines:
-                cprint(f'Stopping pipeline {pipeline}', 'yellow')
+                self._cprint(f'Stopping pipeline {pipeline}', 'yellow')
                 self.pps_client.stop_pipeline(pipeline)
                 stopped_pipelines.append(pipeline)
             else:
-                cprint(f'Pipeline {pipeline} does not exist', 'yellow')
+                self._cprint(f'Pipeline {pipeline} does not exist', 'yellow')
 
         return stopped_pipelines
 
     def trigger_pipeline(self, pipeline):
-        repo = pipeline + '_tick'
+        """Trigger a cron-triggered pipeline by writing a time file into its tick repo.
+
+        Args:
+            pipeline (str): Name of pipeline to trigger
+        """
         timestamp = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
-        commit = self.pfs_client.start_commit(repo, branch='master')
+        commit = self.pfs_client.start_commit(pipeline + '_tick', branch='master')
         self.pfs_client.delete_file(commit, 'time')
         self.pfs_client.put_file_bytes(commit, 'time', json.dumps(timestamp).encode('utf-8'))
         self.pfs_client.finish_commit(commit)
 
+    def read_pipeline_specs(self, pipelines='*'):
+        """Read pipelines specs from files.
+
+        The spec files are defined through the `pipeline_spec_files` property,
+        which can be a list of file paths or a valid glob pattern.
+
+        Args:
+            pipelines (str, list[str]): Name or list of names of pipelines to read specifications for.
+                                        If single name is given, wildcards (*) are supported.
+        """
+        files = self.pipeline_spec_files
+        if isinstance(files, str):
+            files = glob(os.path.expanduser(files))
+        assert isinstance(files, list)
+
+        # Subset list of files
+        files_subset = [f for f in files if fnmatch(os.path.basename(f), pipelines) or pipelines.startswith(os.path.splitext(os.path.basename(f))[0])]
+        if len(files_subset) > 0:
+            files = files_subset
+        self._cprint(f'Reading pipeline specifications from {len(files)} files', 'yellow')
+
+        # Read pipeline specs from files
+        pipeline_specs = []
+        for file in set(files):
+            with open(file, 'r') as f:
+                file_content = yaml.safe_load(f)
+                if not isinstance(file_content, list):
+                    raise TypeError(f'File {os.path.basename(file)} does not contain a list')
+                pipeline_specs.extend(file_content)
+
+        # Transform pipeline specs to meet the Pachyderm specification format
+        pipeline_specs = self.transform_pipeline_specs(pipeline_specs)
+
+        # Filter pipelines
+        if isinstance(pipelines, str) and pipelines != '*':
+            pipeline_specs = [p for p in pipeline_specs if fnmatch(p['pipeline']['name'], pipelines)]
+        elif isinstance(pipelines, list):
+            pipeline_specs = [p for p in pipeline_specs if p['pipeline']['name'] in set(pipelines)]
+
+        if self.update_image_digests:
+            assert isinstance(self.container_registry, Registry), 'container_registry must be set in order to update image digests'
+            for pipeline in pipeline_specs:
+                repository, tag, digest = _split_image_string(pipeline['transform']['image'])
+                digest = self.container_registry.get_image_digest(repository, tag)
+                if digest is not None:
+                    pipeline['transform']['image'] = f'{repository}:{tag}@{digest}'
+
+        self._cprint(f'Matched specification for {len(pipeline_specs)} pipelines', 'green' if len(pipeline_specs) > 0 else 'red')
+        return pipeline_specs
+
+    def transform_pipeline_specs(self, pipeline_specs):
+        """Applies default transformations on pipeline specs.
+
+        This includes inheritance of the `image` from previous pipelines if not specified.
+        Also applies a custom transformer function on each spec if specified via property `pipeline_spec_transformer`.
+
+        Args:
+            pipeline_specs (list[dict]): Pipeline specifications to transform.
+        """
+        previous_image = None
+        for pipeline in pipeline_specs:
+            if isinstance(pipeline['pipeline'], str):
+                pipeline['pipeline'] = {'name': pipeline['pipeline']}
+            if 'image' not in pipeline['transform'] and previous_image is not None:
+                pipeline['transform']['image'] = previous_image
+            if callable(self.pipeline_spec_transformer):
+                pipeline = self.pipeline_spec_transformer(pipeline)
+            previous_image = pipeline['transform']['image']
+        return pipeline_specs
+
     def clear_cache(self):
+        """Clears cache of existing pipelines and image digests.
+
+        Run this if pipelines have been created/deleted or images updated outside of this package."""
         try:
             self._list_pipeline_names.cache_clear()
             self.container_registry.clear_cache()
@@ -419,6 +469,10 @@ class PachydermClient(PachydermClientBase):
             return [p.pipeline.name for p in self.pps_client.list_pipeline().pipeline_info]
         else:
             return [p for p in self._list_pipeline_names() if fnmatch(p, match)]
+
+    def _cprint(self, text, color=None, on_color=None):
+        if self.cprint:
+            cprint(text, color=color, on_color=on_color)
 
 
 def _split_image_string(image):
