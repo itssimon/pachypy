@@ -86,7 +86,7 @@ class PachydermClient(PythonPachydermWrapper):
         except ModuleNotFoundError:
             self.notebook_mode = False
 
-    def list_repo(self, repos: str = '*', style: bool = True) -> Union[pd.DataFrame, pd.io.formats.style.Styler]:
+    def list_repo(self, repos: str = '*', style: bool = True) -> Optional[Union[pd.DataFrame, pd.io.formats.style.Styler]]:
         """Get list of repos as pandas DataFrame.
 
         Args:
@@ -119,7 +119,7 @@ class PachydermClient(PythonPachydermWrapper):
         else:
             return df
 
-    def list_pipeline(self, pipelines: str = '*', style: bool = True) -> Union[pd.DataFrame, pd.io.formats.style.Styler]:
+    def list_pipeline(self, pipelines: str = '*', style: bool = True) -> Optional[Union[pd.DataFrame, pd.io.formats.style.Styler]]:
         """Get list of pipelines as pandas DataFrame.
 
         Args:
@@ -139,7 +139,14 @@ class PachydermClient(PythonPachydermWrapper):
 
         if self.notebook_mode and style:
             def style_state(s):
-                color = {'starting': 'orange', 'running': 'green', 'restarting': 'orange', 'failure': 'red', 'paused': 'orange', 'standby': 'blue'}
+                color = {
+                    'starting': 'orange',
+                    'running': 'green',
+                    'restarting': 'orange',
+                    'failure': 'red',
+                    'paused': 'orange',
+                    'standby': 'blue'
+                }
                 return [f'color: {color[v]}; font-weight: bold' if v in color else '' for v in s]
 
             def highlight_gt1(s):
@@ -152,7 +159,7 @@ class PachydermClient(PythonPachydermWrapper):
         else:
             return df
 
-    def list_job(self, pipelines: str = '*', n: int = 20, style: bool = True) -> Union[pd.DataFrame, pd.io.formats.style.Styler]:
+    def list_job(self, pipelines: str = '*', n: int = 20, style: bool = True) -> Optional[Union[pd.DataFrame, pd.io.formats.style.Styler]]:
         """Get list of jobs as pandas DataFrame.
 
         Args:
@@ -283,6 +290,9 @@ class PachydermClient(PythonPachydermWrapper):
             pipelines: Pattern to filter pipeline specs by pipeline name. Supports shell-style wildcards.
             pipeline_specs: Pipeline specifications. Specs are read from files (see property pipeline_spec_files) if not specified. (optional)
             recreate: Whether to delete existing pipelines before recreating them.
+
+        Returns:
+            Names of created pipelines.
         """
         return self._create_or_update_pipelines(pipelines=pipelines, pipeline_specs=pipeline_specs,
                                                 update=False, recreate=recreate, reprocess=False)
@@ -303,6 +313,9 @@ class PachydermClient(PythonPachydermWrapper):
             pipeline_specs: Pipeline specifications. Specs are read from files (see property pipeline_spec_files) if not specified. (optional)
             recreate: Whether to delete existing pipelines before recreating them.
             reprocess: Whether to reprocess datums with updated pipeline.
+
+        Returns:
+            Names of updated pipelines.
         """
         return self._create_or_update_pipelines(pipelines=pipelines, pipeline_specs=pipeline_specs,
                                                 update=True, recreate=recreate, reprocess=reprocess)
