@@ -5,6 +5,7 @@ __all__ = [
 import os
 import json
 from functools import lru_cache
+from typing import Optional
 
 
 class RegistryAuthorizationException(Exception):
@@ -15,26 +16,42 @@ class RegistryImageNotFoundException(Exception):
     pass
 
 
-class Registry:
+class ContainerRegistry:
+
+    """Container registry handler base class."""
 
     @lru_cache()
-    def get_image_digest(self, repository, tag):
+    def get_image_digest(self, repository: str, tag: str) -> str:
+        """Retrieve the latest image digest.
+
+        Args:
+            repository (str): Repository.
+            tag (str): Tag.
+        """
         raise NotImplementedError
 
-    def clear_cache(self):
+    def clear_cache(self) -> None:
+        """Clear image digest cache."""
         self.get_image_digest.cache_clear()
 
 
-class DockerRegistry(Registry):
+class DockerRegistry(ContainerRegistry):
 
-    def __init__(self, registry_host='index.docker.io', auth=None):
+    """Docker registry handler.
+
+    Args:
+        registry_host: Hostname of Docker registry. Defaults to Docker Hub.
+        auth: Docker auth token. Will try to read this from ~/.docker/config.json if not specified. Run `docker login` before relying on it. (optional)
+    """
+
+    def __init__(self, registry_host: str = 'index.docker.io', auth: Optional[str] = None):
         self.registry_host = registry_host
         self.auth = auth
         if self.auth is None:
             self.auth = self.load_auth_from_file()
 
     @lru_cache()
-    def get_image_digest(self, repository, tag):
+    def get_image_digest(self, repository: str, tag: str) -> str:
         from dxf import DXF
         from dxf.exceptions import DXFUnauthorizedError
         try:
@@ -50,11 +67,11 @@ class DockerRegistry(Registry):
         except DXFUnauthorizedError:
             raise RegistryImageNotFoundException(f'Image {repository}:{tag} not found in registry {self.index_url}')
 
-    def load_auth_from_file(self, file='~/.docker/config.json'):
+    def load_auth_from_file(self, file: str = '~/.docker/config.json') -> str:
         try:
             with open(os.path.expanduser(file)) as config_file:
                 data = json.load(config_file)
-        except:
+        except (FileNotFoundError, json.JSONDecodeError):
             return None
         if 'credsStore' in data:
             raise NotImplementedError('Credentials store not currently supported')
@@ -63,14 +80,21 @@ class DockerRegistry(Registry):
             return data.get('auths', {}).get(hub_index, {}).get('auth', None)
 
 
-class AmazonECRRegistry(Registry):
+class AmazonECRRegistry(ContainerRegistry):
 
-    def __init__(self, aws_access_key_id=None, aws_secret_access_key=None):
+    """Amazon Elastic Container Registry (ECR) handler using boto3.
+
+    Args:
+        aws_access_key_id: AWS access key ID. (optional)
+        aws_secret_access_key: AWS secret access key. (optional)
+    """
+
+    def __init__(self, aws_access_key_id: Optional[str] = None, aws_secret_access_key: Optional[str] = None):
         import boto3
         self.ecr_client = boto3.client('ecr', aws_access_key_id=aws_access_key_id, aws_secret_access_key=aws_secret_access_key)
 
     @lru_cache()
-    def _get_image_digest_from_ecr(self, repository, tag):
+    def _get_image_digest_from_ecr(self, repository: str, tag: str) -> str:
         try:
             res = self.ecr_client.batch_get_image(imageIds=[{'imageTag': tag}], repositoryName=repository)
             return res['images'][0]['imageId']['imageDigest']
