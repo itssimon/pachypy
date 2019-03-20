@@ -1,4 +1,4 @@
-# pachypy - A Python client library and alternative CLI for Pachyderm
+# pachypy - A Python client library and CLI for Pachyderm
 
 This package aims to make interactions with a [Pachyderm](https://www.pachyderm.io) cluster more efficient and user-friendly.
 
