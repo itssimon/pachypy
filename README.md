@@ -17,6 +17,8 @@ Current functionality includes:
 - Automatically add image digests when creating/updating pipelines to ensure Kubernetes pulls the latest version of images used in pipelines
 - Custom transformation of pipeline specs (e.g. programmatically add fields) before creating/updating pipelines
 
+pachypy builds on top of the official [python_pachyderm](https://github.com/pachyderm/python-pachyderm) package.
+
 *Requires Python 3.5 or higher*
 
 ## Installation
@@ -24,8 +26,6 @@ Current functionality includes:
 ```bash
 pip install git+https://github.com/itssimon/pachypy.git
 ```
-
-pachypy relies on the official [python_pachyderm](https://github.com/pachyderm/python-pachyderm) package, which for the moment is installed directly from GitHub.
 
 ## Usage in notebook
 
