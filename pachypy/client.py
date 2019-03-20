@@ -405,7 +405,7 @@ class PachydermClient(PythonPachydermWrapper):
         self.pfs_client.put_file_bytes(commit, 'time', json.dumps(timestamp).encode('utf-8'))
         self.pfs_client.finish_commit(commit)
 
-    def read_pipeline_specs(self, pipelines: str = '*') -> List[Dict]:
+    def read_pipeline_specs(self, pipelines: str = '*') -> List[dict]:
         """Read pipelines specs from files.
 
         The spec files are defined through the `pipeline_spec_files` property,
@@ -452,7 +452,7 @@ class PachydermClient(PythonPachydermWrapper):
         self._cprint(f'Matched specification for {len(pipeline_specs)} pipelines', 'green' if len(pipeline_specs) > 0 else 'red')
         return pipeline_specs
 
-    def transform_pipeline_specs(self, pipeline_specs: List[Dict]) -> List[Dict]:
+    def transform_pipeline_specs(self, pipeline_specs: List[dict]) -> List[dict]:
         """Applies default transformations on pipeline specs.
 
         This includes inheritance of the `image` from previous pipelines if not specified.
