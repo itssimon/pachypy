@@ -55,14 +55,17 @@ pachy.list_job('test*')
 ### Get logs
 
 ```python
-# Print logs of last job of pipelines starting with 'test'
+# Print logs for last job of pipelines starting with 'test'
 pachy.get_logs('test*')
 
-# Print logs of all jobs of pipelines starting with 'test'
+# Print logs for all jobs of pipelines starting with 'test'
 pachy.get_logs('test*', last_job_only=False)
 ```
 
 ### Create, update and delete pipelines
 
 ```python
+...
 ```
+
+*Work in progress...*
