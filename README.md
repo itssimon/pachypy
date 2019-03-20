@@ -1,5 +1,7 @@
 # pachypy - A Python client library and CLI for Pachyderm
 
+[![Documentation Status](https://readthedocs.org/projects/pachypy/badge/?version=latest)](https://pachypy.readthedocs.io/en/latest/?badge=latest)
+
 This package aims to make interactions with a [Pachyderm](https://www.pachyderm.io) cluster more efficient and user-friendly.
 
 It is primarily intended to be used in a Jupyter notebook environment. A command-line interface is also provided.
