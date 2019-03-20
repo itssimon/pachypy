@@ -1,3 +1,5 @@
+from typing import Optional
+
 import pandas as pd
 
 from python_pachyderm import PpsClient, PfsClient
@@ -13,16 +15,16 @@ class PythonPachydermWrapper:
     This is the basis for the PachydermClient class and is not intended to be used directly.
 
     Args:
-        host (str): Hostname or IP address to reach pachd.
-        post (int): Port on which pachd is listening.
+        host: Hostname or IP address to reach pachd.
+        post: Port on which pachd is listening.
     """
 
-    def __init__(self, host='localhost', port=30650):
+    def __init__(self, host: str = 'localhost', port: int = 30650):
         self.pps_client = PpsClient(host, port)
         self.pfs_client = PfsClient(host, port)
 
-    def _list_repo(self):
-        """Returns list of repositories as pandas DataFrame."""
+    def _list_repo(self) -> pd.DataFrame:
+        """Returns list of repositories."""
         res = []
         for repo in self.pfs_client.list_repo():
             res.append({
@@ -33,8 +35,8 @@ class PythonPachydermWrapper:
             })
         return pd.DataFrame(res)
 
-    def _list_pipeline(self):
-        """Returns list of pipelines as pandas DataFrame."""
+    def _list_pipeline(self) -> pd.DataFrame:
+        """Returns list of pipelines."""
         state_mapping = {
             PIPELINE_STARTING: 'starting',
             PIPELINE_RUNNING: 'running',
@@ -53,12 +55,12 @@ class PythonPachydermWrapper:
             })
         return pd.DataFrame(res)
 
-    def _list_job(self, pipeline=None, n=20):
-        """Returns list of last n jobs as pandas DataFrame.
+    def _list_job(self, pipeline: Optional[str] = None, n: int = 20) -> pd.DataFrame:
+        """Returns list of last n jobs.
 
         Args:
-            pipeline (str): Name of pipeline to return jobs for. (optional)
-            n (int): Maximum number of jobs to return.
+            pipeline: Name of pipeline to return jobs for. Returns all jobs if not specified.
+            n: Maximum number of jobs to return.
         """
         state_mapping = {
             JOB_STARTING: 'starting',
@@ -91,13 +93,13 @@ class PythonPachydermWrapper:
                 break
         return pd.DataFrame(res)
 
-    def _get_logs(self, pipeline=None, job=None, master=False):
-        """Returns log entries as pandas DataFrame.
+    def _get_logs(self, pipeline: Optional[str] = None, job: Optional[str] = None, master: bool = False) -> pd.DataFrame:
+        """Returns log entries.
 
         Args:
-            pipeline (str): Name of pipeline to filter logs by. (optional)
-            job (str): ID of job to filter logs by. (optional)
-            master (bool): Whether to return logs from the Pachyderm master process.
+            pipeline: Name of pipeline to filter logs by.
+            job: ID of job to filter logs by. (optional)
+            master: Whether to return logs from the Pachyderm master process.
         """
         res = []
         for msg in self.pps_client.get_logs(pipeline_name=pipeline, job_id=job, master=master):
@@ -112,27 +114,27 @@ class PythonPachydermWrapper:
             })
         return pd.DataFrame(res)
 
-    def _create_pipeline(self, pipeline_specs):
+    def _create_pipeline(self, pipeline_specs: dict) -> None:
         """Create pipeline with given specs.
 
         Args:
-            pipeline_specs (dict): Pipeline specs.
+            pipeline_specs: Pipeline specs.
         """
         self.pps_client.stub.CreatePipeline(CreatePipelineRequest(**pipeline_specs))
 
-    def _update_pipeline(self, pipeline_specs, reprocess=False):
+    def _update_pipeline(self, pipeline_specs: dict, reprocess: bool = False) -> None:
         """Update existing pipeline with given specs.
 
         Args:
-            pipeline_specs (dict): Pipeline specs.
-            reprocess (bool): Whether to reprocess datums with updated pipeline.
+            pipeline_specs: Pipeline specs.
+            reprocess: Whether to reprocess datums with updated pipeline.
         """
         self.pps_client.stub.CreatePipeline(CreatePipelineRequest(update=True, reprocess=reprocess, **pipeline_specs))
 
-    def _delete_pipeline(self, pipeline):
+    def _delete_pipeline(self, pipeline: str) -> None:
         """Delete pipeline.
 
         Args:
-            pipeline (str): Name of pipeline to delete.
+            pipeline: Name of pipeline to delete.
         """
         self.pps_client.stub.DeletePipeline(DeletePipelineRequest(pipeline=Pipeline(name=pipeline)))

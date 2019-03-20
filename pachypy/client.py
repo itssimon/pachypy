@@ -22,9 +22,6 @@ from .registry import ContainerRegistry, DockerRegistry, AmazonECRRegistry
 STYLE_HIGHLIGHT_CSS = 'color: #d65f5f; font-weight: bold'
 STYLE_BAR_COLOR = '#d65f5f44'
 
-Pipelines = Union[str, List[str]]
-PipelineSpecs = List[Dict]
-
 
 class PachydermClient(PythonPachydermWrapper):
 
@@ -46,9 +43,9 @@ class PachydermClient(PythonPachydermWrapper):
                             Used to retrieve image digests.
         update_image_digests: Whether to update the image field in pipeline specs with the latest image digest
                               to force Kubernetes to pull the latest version from the container registry.
-        pipeline_spec_files: Glob pattern or list of file paths to pipeline specs in YAML format. (optional)
+        pipeline_spec_files: Glob pattern or list of file paths to pipeline specs in YAML format.
         pipeline_spec_transformer: Function that takes a pipeline spec as dictionary as the only argument
-                                   and returns a transformed pipeline spec also as dictionary. (optional)
+                                   and returns a transformed pipeline spec.
         cprint: Whether to print colored status messages to stdout when interacting with this class.
     """
 
@@ -288,7 +285,7 @@ class PachydermClient(PythonPachydermWrapper):
 
         Args:
             pipelines: Pattern to filter pipeline specs by pipeline name. Supports shell-style wildcards.
-            pipeline_specs: Pipeline specifications. Specs are read from files (see property pipeline_spec_files) if not specified. (optional)
+            pipeline_specs: Pipeline specifications. Specs are read from files (see property pipeline_spec_files) if not specified.
             recreate: Whether to delete existing pipelines before recreating them.
 
         Returns:
@@ -310,7 +307,7 @@ class PachydermClient(PythonPachydermWrapper):
 
         Args:
             pipelines: Pattern to filter pipeline specs by pipeline name. Supports shell-style wildcards.
-            pipeline_specs: Pipeline specifications. Specs are read from files (see property pipeline_spec_files) if not specified. (optional)
+            pipeline_specs: Pipeline specifications. Specs are read from files (see property pipeline_spec_files) if not specified.
             recreate: Whether to delete existing pipelines before recreating them.
             reprocess: Whether to reprocess datums with updated pipeline.
 
@@ -321,6 +318,14 @@ class PachydermClient(PythonPachydermWrapper):
                                                 update=True, recreate=recreate, reprocess=reprocess)
 
     def delete_pipelines(self, pipelines: str) -> List[str]:
+        """Delete existing pipelines.
+
+        Args:
+            pipelines: Pattern to filter pipelines by name. Supports shell-style wildcards.
+
+        Returns:
+            Names of deleted pipelines.
+        """
         pipelines = pipelines if isinstance(pipelines, list) else self._list_pipeline_names(pipelines)
         existing_pipelines = set(self._list_pipeline_names())
         deleted_pipelines = []
@@ -338,6 +343,14 @@ class PachydermClient(PythonPachydermWrapper):
         return deleted_pipelines
 
     def start_pipelines(self, pipelines: str) -> List[str]:
+        """Restart stopped pipelines.
+
+        Args:
+            pipelines: Pattern to filter pipelines by name. Supports shell-style wildcards.
+
+        Returns:
+            Names of started pipelines.
+        """
         pipelines = pipelines if isinstance(pipelines, list) else self._list_pipeline_names(pipelines)
         existing_pipelines = set(self._list_pipeline_names())
         started_pipelines = []
@@ -353,6 +366,14 @@ class PachydermClient(PythonPachydermWrapper):
         return started_pipelines
 
     def stop_pipelines(self, pipelines: str) -> List[str]:
+        """Stop running pipelines.
+
+        Args:
+            pipelines: Pattern to filter pipelines by name. Supports shell-style wildcards.
+
+        Returns:
+            Names of stopped pipelines.
+        """
         pipelines = pipelines if isinstance(pipelines, list) else self._list_pipeline_names(pipelines)
         existing_pipelines = set(self._list_pipeline_names())
         stopped_pipelines = []
@@ -367,14 +388,27 @@ class PachydermClient(PythonPachydermWrapper):
 
         return stopped_pipelines
 
-    def trigger_pipeline(self, pipeline: str) -> None:
-        """Trigger a cron-triggered pipeline by writing a time file into its tick repo.
+    def trigger_pipeline(self, pipeline: str, input_name: str = 'tick') -> None:
+        """Trigger a cron-triggered pipeline by committing a timestamp file into its tick repository.
+
+        This simply calls `commit_timestamp_file()`, expecting the cron input repo of the
+        pipeline to have the default name `<pipeline>_<input_name>`.
 
         Args:
-            pipeline (str): Name of pipeline to trigger
+            pipeline: Name of pipeline to trigger
+            input_name: Name of the cron input. Defaults to 'tick'.
+        """
+        self.commit_timestamp_file(repo=f'{pipeline}_{input_name}')
+
+    def commit_timestamp_file(self, repo: str, branch: str = 'master') -> None:
+        """Commits a timestamp file to given repository to trigger a cron input.
+
+        Args:
+            repo: Name of repository
+            branch: Name of branch. Defaults to 'master'.
         """
         timestamp = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
-        commit = self.pfs_client.start_commit(pipeline + '_tick', branch='master')
+        commit = self.pfs_client.start_commit(repo, branch=branch)
         self.pfs_client.delete_file(commit, 'time')
         self.pfs_client.put_file_bytes(commit, 'time', json.dumps(timestamp).encode('utf-8'))
         self.pfs_client.finish_commit(commit)
