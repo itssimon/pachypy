@@ -1,5 +1,6 @@
 # pachypy - A Python client library and CLI for Pachyderm
 
+![Python 3.5](https://img.shields.io/badge/python-3.5+-blue.svg)
 [![Documentation Status](https://readthedocs.org/projects/pachypy/badge/?version=latest)](https://pachypy.readthedocs.io/en/latest/?badge=latest)
 
 This package aims to make interactions with a [Pachyderm](https://www.pachyderm.io) cluster more efficient and user-friendly.
@@ -14,6 +15,8 @@ Current functionality includes:
 - Read pipeline specs from YAML files, supporting multiple pipelines per file
 - Automatically add image digests when creating/updating pipelines to ensure Kubernetes pulls the latest version of images used in pipelines
 - Custom transformation of pipeline specs (e.g. programmatically add fields) before creating/updating pipelines
+
+*Requires Python 3.5 or higher*
 
 ## Installation
 
