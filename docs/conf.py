@@ -46,6 +46,10 @@ extensions = [
     'sphinx_autodoc_typehints',
 ]
 
+# autodoc configuration
+autodoc_mock_imports = ['python_pachyderm', 'pandas', 'tzlocal', 'termcolor', 'pyyaml']
+autodoc_member_order = 'bysource'
+
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
 
