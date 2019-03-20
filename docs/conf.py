@@ -47,7 +47,7 @@ extensions = [
 ]
 
 # autodoc configuration
-autodoc_mock_imports = ['python_pachyderm']
+autodoc_mock_imports = []
 autodoc_member_order = 'bysource'
 
 # Add any paths that contain templates here, relative to this directory.
