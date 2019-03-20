@@ -16,7 +16,7 @@ class PythonPachydermWrapper:
 
     Args:
         host: Hostname or IP address to reach pachd.
-        post: Port on which pachd is listening.
+        port: Port on which pachd is listening.
     """
 
     def __init__(self, host: str = 'localhost', port: int = 30650):

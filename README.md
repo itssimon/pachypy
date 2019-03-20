@@ -15,14 +15,14 @@ Current functionality includes:
 
 ## Installation
 
-pachpy relies internally on the official [python_pachyderm](https://github.com/pachyderm/python-pachyderm) package, which for the moment is best installed directly from GitHub.
+pachypy relies on the official [python_pachyderm](https://github.com/pachyderm/python-pachyderm) package, which for the moment is best installed directly from GitHub.
 
 ```bash
 pip install --upgrade git+https://github.com/pachyderm/python-pachyderm.git
 pip install git+https://github.com/itssimon/pachypy.git
 ```
 
-## Basic usage
+## Usage in notebook
 
 ### Initialise client
 

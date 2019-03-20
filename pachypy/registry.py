@@ -41,7 +41,7 @@ class DockerRegistry(ContainerRegistry):
 
     Args:
         registry_host: Hostname of Docker registry. Defaults to Docker Hub.
-        auth: Docker auth token. Will try to read this from ~/.docker/config.json if not specified. Run `docker login` before relying on it.
+        auth: Docker auth token. Will try to read this from ``~/.docker/config.json`` if not specified. Run ``docker login`` before relying on it.
     """
 
     def __init__(self, registry_host: str = 'index.docker.io', auth: Optional[str] = None):
