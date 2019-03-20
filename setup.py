@@ -8,5 +8,8 @@ setup(
     install_requires=[
         'pandas', 'pyyaml', 'tzlocal', 'termcolor',
         'python_pachyderm'
-    ]
+    ],
+    extras_require={
+        'docs':  ['sphinx_rtd_theme', 'sphinx_autodoc_typehints']
+    }
 )
