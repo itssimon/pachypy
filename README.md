@@ -2,6 +2,7 @@
 
 ![Python 3.5](https://img.shields.io/badge/python-3.5+-blue.svg)
 [![Documentation Status](https://readthedocs.org/projects/pachypy/badge/?version=latest)](https://pachypy.readthedocs.io/en/latest/?badge=latest)
+[![Coverage Status](https://coveralls.io/repos/github/itssimon/pachypy/badge.svg?branch=master)](https://coveralls.io/github/itssimon/pachypy?branch=master)
 ![Stability Experimental](https://img.shields.io/badge/stability-experimental-orange.svg)
 
 This package aims to make interactions with a [Pachyderm](https://www.pachyderm.io) cluster more efficient and user-friendly.
