@@ -9,7 +9,7 @@ from glob import glob
 from fnmatch import fnmatch
 from functools import lru_cache
 from datetime import datetime
-from typing import List, Tuple, Dict, Callable, Union, Optional
+from typing import List, Tuple, Callable, Union, Optional
 
 import pandas as pd
 import pandas.io.formats.style as style
