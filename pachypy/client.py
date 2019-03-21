@@ -16,7 +16,7 @@ import pandas.io.formats.style as style
 from tzlocal import get_localzone
 from termcolor import cprint
 
-from .base import PythonPachydermWrapper
+from .base import PachydermWrapper
 from .registry import ContainerRegistry, DockerRegistry, AmazonECRRegistry
 
 
@@ -24,13 +24,13 @@ STYLE_HIGHLIGHT_CSS = 'color: #d65f5f; font-weight: bold'
 STYLE_BAR_COLOR = '#d65f5f44'
 
 
-class PachydermClient(PythonPachydermWrapper):
+class PachydermClient(PachydermWrapper):
 
     """Pachyderm client aiming to make interaction with a Pachyderm cluster more efficient and user-friendly.
 
     Args:
-        host: Hostname or IP address to reach pachd.
-        port: Port on which pachd is listening.
+        host: Hostname or IP address to reach pachd. Attempts to get this from PACHD_ADDRESS or ``~/.pachyderm/config.json`` if not set.
+        port: Port on which pachd is listening (usually 30650).
         container_registry: 'docker' for Docker Hub, 'ecr' for Amazon ECR, a ContainerRegistry instance or
             a Docker registry hostname. Used to retrieve image digests.
         update_image_digests: Whether to update the image field in pipeline specs with the latest image digest
@@ -43,8 +43,8 @@ class PachydermClient(PythonPachydermWrapper):
 
     def __init__(
         self,
-        host: str = 'localhost',
-        port: int = 30650,
+        host: Optional[str] = None,
+        port: Optional[int] = None,
         container_registry: Optional[Union[str, ContainerRegistry]] = 'docker',
         update_image_digests: bool = True,
         pipeline_spec_files: Optional[Union[str, List[str]]] = None,
@@ -75,14 +75,16 @@ class PachydermClient(PythonPachydermWrapper):
         except ModuleNotFoundError:
             self.notebook_mode = False
 
-    def list_repo(self, repos: str = '*', style: bool = True) -> Optional[Union[pd.DataFrame, style.Styler]]:
+        self._cprint(f'Created client for Pachyderm cluster at {self.host}:{self.port}', 'green')
+
+    def list_repos(self, repos: str = '*', style: bool = True) -> Optional[Union[pd.DataFrame, style.Styler]]:
         """Get list of repos as pandas DataFrame.
 
         Args:
             repos: Name pattern to filter repos returned. Supports shell-style wildcards.
             style: Whether to apply styling to the returned DataFrame (only supported in interactive notebooks).
         """
-        df = self._list_repo()
+        df = self._list_repos()
         if len(df) == 0:
             return None
         if repos is not None and repos != '*':
@@ -108,14 +110,14 @@ class PachydermClient(PythonPachydermWrapper):
         else:
             return df
 
-    def list_pipeline(self, pipelines: str = '*', style: bool = True) -> Optional[Union[pd.DataFrame, style.Styler]]:
+    def list_pipelines(self, pipelines: str = '*', style: bool = True) -> Optional[Union[pd.DataFrame, style.Styler]]:
         """Get list of pipelines as pandas DataFrame.
 
         Args:
             pipelines: Name pattern to filter pipelines returned. Supports shell-style wildcards.
             style: Whether to apply styling to the returned DataFrame (only supported in interactive notebooks).
         """
-        df = self._list_pipeline()
+        df = self._list_pipelines()
         if len(df) == 0:
             return None
         if pipelines is not None and pipelines != '*':
@@ -148,7 +150,7 @@ class PachydermClient(PythonPachydermWrapper):
         else:
             return df
 
-    def list_job(self, pipelines: str = '*', n: int = 20, style: bool = True) -> Optional[Union[pd.DataFrame, style.Styler]]:
+    def list_jobs(self, pipelines: str = '*', n: int = 20, style: bool = True) -> Optional[Union[pd.DataFrame, style.Styler]]:
         """Get list of jobs as pandas DataFrame.
 
         Args:
@@ -160,11 +162,11 @@ class PachydermClient(PythonPachydermWrapper):
             pipelines = self._list_pipeline_names(pipelines)
             df = []
             for pipeline in pipelines:
-                df.append(self._list_job(pipeline=pipeline, n=n))
+                df.append(self._list_jobs(pipeline=pipeline, n=n))
             if len(df) > 0:
                 df = pd.concat(df)
         else:
-            df = self._list_job(n=n)
+            df = self._list_jobs(n=n)
         if len(df) == 0:
             return None
 
@@ -519,7 +521,7 @@ class PachydermClient(PythonPachydermWrapper):
     @lru_cache(maxsize=None)
     def _list_pipeline_names(self, match=None):
         if match is None or match == '*':
-            return [p.pipeline.name for p in self.pps_client.list_pipeline().pipeline_info]
+            return [p.pipeline.name for p in self.pps_client.list_pipelines().pipeline_info]
         else:
             return [p for p in self._list_pipeline_names() if fnmatch(p, match)]
 

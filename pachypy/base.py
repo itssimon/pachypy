@@ -1,6 +1,10 @@
+import os
+import time
+import json
 from typing import Optional
 
 import pandas as pd
+from grpc._channel import _Rendezvous
 
 from python_pachyderm import PpsClient, PfsClient
 from python_pachyderm.client.pps.pps_pb2 import ListJobRequest, CreatePipelineRequest, DeletePipelineRequest, Pipeline
@@ -8,34 +12,93 @@ from python_pachyderm.pps_client import JOB_STARTING, JOB_RUNNING, JOB_FAILURE, 
 from python_pachyderm.pps_client import PIPELINE_STARTING, PIPELINE_RUNNING, PIPELINE_RESTARTING, PIPELINE_FAILURE, PIPELINE_PAUSED, PIPELINE_STANDBY
 
 
-class PythonPachydermWrapper:
+class PachydermException(Exception):
+
+    def __init__(self, details, code):
+        super().__init__(details)
+        self.status_code = code.value[0]
+        self.status = code.value[1]
+
+
+class PachydermWrapper:
 
     """Wrapper around client objects of the python_pachyderm package for easier interaction.
 
     This is the basis for the PachydermClient class and is not intended to be used directly.
 
     Args:
-        host: Hostname or IP address to reach pachd.
-        port: Port on which pachd is listening.
+        host: Hostname or IP address to reach pachd. Attempts to get this from PACHD_ADDRESS or ``~/.pachyderm/config.json`` if not set.
+        port: Port on which pachd is listening (usually 30650).
     """
 
-    def __init__(self, host: str = 'localhost', port: int = 30650):
-        self.pps_client = PpsClient(host, port)
-        self.pfs_client = PfsClient(host, port)
+    def __init__(self, host: Optional[str] = None, port: Optional[int] = None):
+        if host is None:
+            host = os.getenv('PACHD_ADDRESS')
+        if host is None:
+            try:
+                with open(os.path.expanduser('~/.pachyderm/config.json'), 'r') as f:
+                    config = json.load(f)
+                    host = config['v1']['pachd_address']
+            except (json.JSONDecodeError, KeyError):
+                pass
+        if host is not None and port is None and ':' in host:
+            try:
+                host_split = host.split(':')
+                host = host_split[0]
+                port = int(host_split[1])
+            except ValueError:
+                pass
+        self.host = host
+        self.port = port
 
-    def _list_repo(self) -> pd.DataFrame:
+        kwargs = {}
+        if host is not None:
+            kwargs['host'] = host
+        if port is not None:
+            kwargs['port'] = port
+        self.pps_client = PpsClient(**kwargs)
+        self.pfs_client = PfsClient(**kwargs)
+
+    def check_connectivity(self, timeout: int = 10) -> bool:
+        """Checks the connectivity to pachd.
+
+        The gRPC channel connectivity knows 5 states:
+        0 = idle, 1 = connecting, 2 = ready, 3 = transient failure, 4 = shutdown.
+
+        Args:
+            timeout: Timeout in seconds.
+
+        Returns:
+            True if the connectivity state is ready (2), False otherwise.
+        """
+        connectivity = 0
+        timeout = time.time() + timeout
+        connectivity = self.pfs_client.channel._channel.check_connectivity_state(True)
+        while connectivity < 2:
+            if time.time() > timeout:
+                connectivity = 5
+                break
+            time.sleep(0.001)
+            connectivity = self.pfs_client.channel._channel.check_connectivity_state(False)
+        # 0 = idle, 1 = connecting, 2 = ready, 3 = transient failure, 4 = shutdown
+        return connectivity == 2
+
+    def _list_repos(self) -> pd.DataFrame:
         """Returns list of repositories."""
-        res = []
-        for repo in self.pfs_client.list_repo():
-            res.append({
-                'repo': repo.repo.name,
-                'size_bytes': repo.size_bytes,
-                'branches': len(repo.branches),
-                'created': repo.created.seconds,
-            })
-        return pd.DataFrame(res)
+        try:
+            res = []
+            for repo in self.pfs_client.list_repos():
+                res.append({
+                    'repo': repo.repo.name,
+                    'size_bytes': repo.size_bytes,
+                    'branches': len(repo.branches),
+                    'created': repo.created.seconds,
+                })
+            return pd.DataFrame(res, columns=['repo', 'size_bytes', 'branches', 'created'])
+        except _Rendezvous as e:
+            raise PachydermException(e.details(), e.code())
 
-    def _list_pipeline(self) -> pd.DataFrame:
+    def _list_pipelines(self) -> pd.DataFrame:
         """Returns list of pipelines."""
         state_mapping = {
             PIPELINE_STARTING: 'starting',
@@ -45,17 +108,45 @@ class PythonPachydermWrapper:
             PIPELINE_PAUSED: 'paused',
             PIPELINE_STANDBY: 'standby',
         }
-        res = []
-        for pipeline in self.pps_client.list_pipeline().pipeline_info:
-            res.append({
-                'pipeline': pipeline.pipeline.name,
-                'parallelism': pipeline.parallelism_spec.constant,
-                'created': float(f'{pipeline.created_at.seconds}.{pipeline.created_at.nanos}'),
-                'state': state_mapping.get(pipeline.state, 'unknown'),
-            })
-        return pd.DataFrame(res)
 
-    def _list_job(self, pipeline: Optional[str] = None, n: int = 20) -> pd.DataFrame:
+        def search_cron_input(input):
+            if input.cron.spec != '':
+                return True
+            if input.cross:
+                for cross_input in input.cross:
+                    if search_cron_input(cross_input):
+                        return True
+            if input.union:
+                for union_input in input.union:
+                    if search_cron_input(union_input):
+                        return True
+            return False
+
+        try:
+            res = []
+            for pipeline in self.pps_client.list_pipelines().pipeline_info:
+                res.append({
+                    'pipeline': pipeline.pipeline.name,
+                    'image': pipeline.transform.image,
+                    'cron_input': search_cron_input(pipeline.input),
+                    'parallelism_constant': pipeline.parallelism_spec.constant,
+                    'parallelism_coefficient': pipeline.parallelism_spec.coefficient,
+                    'jobs_running': pipeline.job_counts[JOB_RUNNING],
+                    'jobs_success': pipeline.job_counts[JOB_SUCCESS],
+                    'jobs_failure': pipeline.job_counts[JOB_FAILURE],
+                    'created': float(f'{pipeline.created_at.seconds}.{pipeline.created_at.nanos}'),
+                    'state': state_mapping.get(pipeline.state, 'unknown'),
+                })
+            return pd.DataFrame(res, columns=[
+                'pipeline', 'image', 'cron_input',
+                'parallelism_constant', 'parallelism_coefficient',
+                'jobs_running', 'jobs_success', 'jobs_failure',
+                'created', 'state'
+            ])
+        except _Rendezvous as e:
+            raise PachydermException(e.details(), e.code())
+
+    def _list_jobs(self, pipeline: Optional[str] = None, n: int = 20) -> pd.DataFrame:
         """Returns list of last n jobs.
 
         Args:
@@ -69,29 +160,37 @@ class PythonPachydermWrapper:
             JOB_SUCCESS: 'success',
             JOB_KILLED: 'killed',
         }
-        i = 1
-        res = []
-        for job in self.pps_client.stub.ListJobStream(ListJobRequest(pipeline=Pipeline(name=pipeline))):
-            res.append({
-                'job': job.job.id,
-                'pipeline': job.pipeline.name,
-                'state': state_mapping.get(job.state, 'unknown'),
-                'started': float(f'{job.started.seconds}.{job.started.nanos}'),
-                'finished': float(f'{job.finished.seconds}.{job.finished.nanos}'),
-                'restart': job.restart,
-                'data_processed': job.data_processed,
-                'data_skipped': job.data_skipped,
-                'data_total': job.data_total,
-                'download_time': float(f'{job.stats.download_time.seconds}.{job.stats.download_time.nanos}'),
-                'process_time': float(f'{job.stats.process_time.seconds}.{job.stats.process_time.nanos}'),
-                'upload_time': float(f'{job.stats.upload_time.seconds}.{job.stats.upload_time.nanos}'),
-                'download_bytes': job.stats.download_bytes,
-                'upload_bytes': job.stats.upload_bytes
-            })
-            i += 1
-            if n is not None and i > n:
-                break
-        return pd.DataFrame(res)
+        try:
+            i = 1
+            res = []
+            for job in self.pps_client.stub.ListJobStream(ListJobRequest(pipeline=Pipeline(name=pipeline))):
+                res.append({
+                    'job': job.job.id,
+                    'pipeline': job.pipeline.name,
+                    'state': state_mapping.get(job.state, 'unknown'),
+                    'started': float(f'{job.started.seconds}.{job.started.nanos}'),
+                    'finished': float(f'{job.finished.seconds}.{job.finished.nanos}'),
+                    'restart': job.restart,
+                    'data_processed': job.data_processed,
+                    'data_skipped': job.data_skipped,
+                    'data_total': job.data_total,
+                    'download_time': float(f'{job.stats.download_time.seconds}.{job.stats.download_time.nanos}'),
+                    'process_time': float(f'{job.stats.process_time.seconds}.{job.stats.process_time.nanos}'),
+                    'upload_time': float(f'{job.stats.upload_time.seconds}.{job.stats.upload_time.nanos}'),
+                    'download_bytes': job.stats.download_bytes,
+                    'upload_bytes': job.stats.upload_bytes
+                })
+                i += 1
+                if n is not None and i > n:
+                    break
+            return pd.DataFrame(res, columns=[
+                'job', 'pipeline', 'state', 'started', 'finished', 'restart',
+                'data_processed', 'data_skipped', 'data_total',
+                'download_time', 'process_time', 'upload_time',
+                'download_bytes', 'upload_bytes'
+            ])
+        except _Rendezvous as e:
+            raise PachydermException(e.details(), e.code())
 
     def _get_logs(self, pipeline: Optional[str] = None, job: Optional[str] = None, master: bool = False) -> pd.DataFrame:
         """Returns log entries.
@@ -101,18 +200,24 @@ class PythonPachydermWrapper:
             job: ID of job to filter logs by. (optional)
             master: Whether to return logs from the Pachyderm master process.
         """
-        res = []
-        for msg in self.pps_client.get_logs(pipeline_name=pipeline, job_id=job, master=master):
-            res.append({
-                'pipeline': msg.pipeline_name,
-                'job': msg.job_id,
-                'ts': float(f'{msg.ts.seconds}.{msg.ts.nanos}'),
-                'message': msg.message,
-                'worker': msg.worker_id,
-                'datum': msg.datum_id,
-                'user': msg.user,
-            })
-        return pd.DataFrame(res)
+        try:
+            res = []
+            for msg in self.pps_client.get_logs(pipeline_name=pipeline, job_id=job, master=master):
+                res.append({
+                    'pipeline': msg.pipeline_name,
+                    'job': msg.job_id,
+                    'ts': float(f'{msg.ts.seconds}.{msg.ts.nanos}'),
+                    'message': msg.message,
+                    'worker': msg.worker_id,
+                    'datum': msg.datum_id,
+                    'user': msg.user,
+                })
+            return pd.DataFrame(res, columns=[
+                'pipeline', 'job', 'ts', 'message',
+                'worker', 'datum', 'user'
+            ])
+        except _Rendezvous as e:
+            raise PachydermException(e.details(), e.code())
 
     def _create_pipeline(self, pipeline_specs: dict) -> None:
         """Create pipeline with given specs.
@@ -120,7 +225,10 @@ class PythonPachydermWrapper:
         Args:
             pipeline_specs: Pipeline specs.
         """
-        self.pps_client.stub.CreatePipeline(CreatePipelineRequest(**pipeline_specs))
+        try:
+            self.pps_client.stub.CreatePipeline(CreatePipelineRequest(**pipeline_specs))
+        except _Rendezvous as e:
+            raise PachydermException(e.details(), e.code())
 
     def _update_pipeline(self, pipeline_specs: dict, reprocess: bool = False) -> None:
         """Update existing pipeline with given specs.
@@ -129,7 +237,10 @@ class PythonPachydermWrapper:
             pipeline_specs: Pipeline specs.
             reprocess: Whether to reprocess datums with updated pipeline.
         """
-        self.pps_client.stub.CreatePipeline(CreatePipelineRequest(update=True, reprocess=reprocess, **pipeline_specs))
+        try:
+            self.pps_client.stub.CreatePipeline(CreatePipelineRequest(update=True, reprocess=reprocess, **pipeline_specs))
+        except _Rendezvous as e:
+            raise PachydermException(e.details(), e.code())
 
     def _delete_pipeline(self, pipeline: str) -> None:
         """Delete pipeline.
@@ -137,4 +248,7 @@ class PythonPachydermWrapper:
         Args:
             pipeline: Name of pipeline to delete.
         """
-        self.pps_client.stub.DeletePipeline(DeletePipelineRequest(pipeline=Pipeline(name=pipeline)))
+        try:
+            self.pps_client.stub.DeletePipeline(DeletePipelineRequest(pipeline=Pipeline(name=pipeline)))
+        except _Rendezvous as e:
+            raise PachydermException(e.details(), e.code())

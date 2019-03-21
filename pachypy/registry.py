@@ -4,6 +4,8 @@ __all__ = [
 
 import os
 import json
+import base64
+import subprocess
 from functools import lru_cache
 from typing import Optional
 
@@ -41,7 +43,9 @@ class DockerRegistry(ContainerRegistry):
 
     Args:
         registry_host: Hostname of Docker registry. Defaults to Docker Hub.
-        auth: Docker auth token. Will try to read this from ``~/.docker/config.json`` if not specified. Run ``docker login`` before relying on it.
+        auth: Docker auth token. Must be "username:password" base64-encoded.
+            Will try to read token from ``~/.docker/config.json`` if not specified.
+            Run ``docker login`` before relying on it.
     """
 
     def __init__(self, registry_host: str = 'index.docker.io', auth: Optional[str] = None):
@@ -60,23 +64,35 @@ class DockerRegistry(ContainerRegistry):
             dxf = DXF(self.registry_host, repo=repository)
             dxf.authenticate(authorization=auth, actions=['pull'])
         except DXFUnauthorizedError:
-            raise RegistryAuthorizationException(f'Authentication with Docker registry {self.index_url} failed. Run `docker login` first?')
+            raise RegistryAuthorizationException(f'Authentication with Docker registry {self.registry_host} failed. Run `docker login` first?')
         try:
             manifest = json.loads(dxf.get_manifest(tag))
             return manifest['config']['digest']
         except DXFUnauthorizedError:
-            raise RegistryImageNotFoundException(f'Image {repository}:{tag} not found in registry {self.index_url}')
+            raise RegistryImageNotFoundException(f'Image {repository}:{tag} not found in registry {self.registry_host}')
 
     def load_auth_from_file(self, file: str = '~/.docker/config.json') -> str:
+        hub_index = 'https://' + self.registry_host + '/v1/'
         try:
-            with open(os.path.expanduser(file)) as config_file:
-                data = json.load(config_file)
+            with open(os.path.expanduser(file)) as f:
+                data = json.load(f)
         except (FileNotFoundError, json.JSONDecodeError):
             return None
         if 'credsStore' in data:
-            raise NotImplementedError('Credentials store not currently supported')
+            try:
+                cmd = 'docker-credential-' + data['credsStore']
+                p = subprocess.Popen([cmd, 'get'], stdout=subprocess.PIPE, stdin=subprocess.PIPE, stderr=subprocess.STDOUT)
+                out = p.communicate(input=hub_index.encode())[0]
+            except FileNotFoundError:
+                raise RuntimeError(f'Could not retrieve Docker credentials from credentials store. Executable file "{cmd}" not found in $PATH.')
+            try:
+                credentials = json.loads(out)
+                username = credentials['Username']
+                password = credentials['Secret']
+                return base64.b64encode(f'{username}:{password}')
+            except (json.JSONDecodeError, KeyError, TypeError):
+                return None
         else:
-            hub_index = 'https://' + self.registry_host + '/v1/'
             return data.get('auths', {}).get(hub_index, {}).get('auth', None)
 
 
