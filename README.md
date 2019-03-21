@@ -5,7 +5,7 @@
 [![Coverage Status](https://coveralls.io/repos/github/itssimon/pachypy/badge.svg?branch=master)](https://coveralls.io/github/itssimon/pachypy?branch=master)
 ![Stability Experimental](https://img.shields.io/badge/stability-experimental-orange.svg)
 
-This package aims to make interactions with a [Pachyderm](https://www.pachyderm.io) cluster more efficient and user-friendly.
+This package aims to make interactions with a [Pachyderm](https://github.com/pachyderm/pachyderm) cluster more efficient and user-friendly.
 
 It is primarily intended to be used in a Jupyter notebook environment. A command-line interface is also provided.
 
