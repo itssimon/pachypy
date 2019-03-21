@@ -7,9 +7,10 @@ setup(
     packages=find_packages(),
     install_requires=[
         'pandas', 'pyyaml', 'tzlocal', 'termcolor',
-        'python_pachyderm'
+        'python_pachyderm', 'python-dxf', 'boto3'
     ],
     extras_require={
-        'docs':  ['sphinx_rtd_theme', 'sphinx_autodoc_typehints']
+        'docs':  ['sphinx_rtd_theme', 'sphinx_autodoc_typehints'],
+        'test': ['pytest', 'pytest-cov']
     }
 )
