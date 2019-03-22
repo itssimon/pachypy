@@ -6,11 +6,17 @@ setup(
     author='Simon Gurcke',
     packages=find_packages(),
     install_requires=[
-        'pandas', 'pyyaml', 'tzlocal', 'termcolor', 'emoji',
-        'python_pachyderm', 'python-dxf', 'boto3'
+        'python_pachyderm>=1.8.5',
+        'python-dxf>=7.5.0',
+        'boto3>=1.9.119'
+        'pandas>=0.24.2',
+        'pyyaml>=5.1',
+        'tzlocal>=1.5.1',
+        'termcolor>=1.1.0',
+        'emoji>=0.5.1',
     ],
     extras_require={
-        'docs':  ['sphinx_rtd_theme', 'sphinx_autodoc_typehints'],
-        'test': ['pytest', 'pytest-cov']
+        'docs':  ['sphinx_rtd_theme>=0.4.3', 'sphinx_autodoc_typehints>=1.6.0'],
+        'test': ['pytest>=4.3.1', 'pytest-cov>=2.6.1']
     }
 )
