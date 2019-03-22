@@ -14,7 +14,7 @@ from python_pachyderm.pps_client import PIPELINE_STARTING, PIPELINE_RUNNING, PIP
 
 class PachydermException(Exception):
 
-    def __init__(self, details, code):
+    def __init__(self, details: str, code):
         super().__init__(details)
         self.status_code = code.value[0]
         self.status = code.value[1]

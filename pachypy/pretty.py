@@ -2,7 +2,7 @@ __all__ = [
     'PrettyPachydermClient'
 ]
 
-from typing import Dict, List
+from typing import Dict, List, Union
 from datetime import datetime
 
 import pandas.io.formats.style as style
@@ -133,23 +133,23 @@ def _calc_pipeline_sort_key(input_repos: Dict[str, List[str]]):
     return {p: f'{dag_name[p]}/{dag_distance[p]}' for p in pipelines}
 
 
-def _format_date(d):
+def _format_date(d: datetime):
     td = (datetime.now().date() - d.date()).days
     word = {-1: 'Tomorrow', 0: 'Today', 1: 'Yesterday'}
     return (word[td] if td in word else '{:%-d %b %Y}'.format(d)) + ' at {:%H:%M}'.format(d)
 
 
-def _format_size(num):
-    if abs(num) == 1:
-        return f'{num:.0f} byte'
-    if abs(num) < 1000.0:
-        return f'{num:.0f} bytes'
-    num /= 1000.0
+def _format_size(x: Union[int, float]):
+    if abs(x) == 1:
+        return f'{x:.0f} byte'
+    if abs(x) < 1000.0:
+        return f'{x:.0f} bytes'
+    x /= 1000.0
     for unit in ['KB', 'MB', 'GB', 'TB']:
-        if abs(num) < 1000.0:
-            return f'{num:.1f} {unit}'
-        num /= 1000.0
-    return f'{num:,.1f} PB'
+        if abs(x) < 1000.0:
+            return f'{x:.1f} {unit}'
+        x /= 1000.0
+    return f'{x:,.1f} PB'
 
 
 def _style_highlight_true(s):
