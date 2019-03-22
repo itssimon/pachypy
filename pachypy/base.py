@@ -25,7 +25,6 @@ def retry(f):
         try:
             return f(self, *args)
         except _Rendezvous as e:
-            print('Caught exception')
             if e.code().value[1] == 'unavailable' and self._retries < self.max_retries:
                 if self.check_connectivity():
                     self._retries += 1
@@ -38,7 +37,7 @@ def retry(f):
 
 class PachydermWrapper:
 
-    """Wrapper around client objects of the python_pachyderm package for easier interaction.
+    """Wrapper around client classes of the python_pachyderm package for easier interaction.
 
     This is the basis for the PachydermClient class and is not intended to be used directly.
 
@@ -109,8 +108,8 @@ class PachydermWrapper:
             res.append({
                 'repo': repo.repo.name,
                 'size_bytes': repo.size_bytes,
-                'branches': len(repo.branches),
-                'created': repo.created.seconds,
+                'branches': [b.name for b in repo.branches],
+                'created': float(f'{repo.created.seconds}.{repo.created.nanos}'),
             })
         return pd.DataFrame(res, columns=['repo', 'size_bytes', 'branches', 'created'])
 
