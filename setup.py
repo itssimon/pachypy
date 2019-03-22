@@ -6,7 +6,7 @@ setup(
     author='Simon Gurcke',
     packages=find_packages(),
     install_requires=[
-        'pandas', 'pyyaml', 'tzlocal', 'termcolor',
+        'pandas', 'pyyaml', 'tzlocal', 'termcolor', 'emoji',
         'python_pachyderm', 'python-dxf', 'boto3'
     ],
     extras_require={
