@@ -12,6 +12,6 @@
     image: alpine:latest
     cmd: ["/bin/sh", "-c", "cat /pfs/test1_pipeline/*"]
   input:
-    atom:
+    pfs:
       repo: test1_pipeline
       glob: "*"
