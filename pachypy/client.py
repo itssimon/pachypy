@@ -66,12 +66,11 @@ class PachydermClient(PachydermWrapper):
 
         self._cprint(f'Created client for Pachyderm cluster at {self.host}:{self.port}', 'green')
 
-    def list_repos(self, repos: str = '*', style: bool = True) -> pd.DataFrame:
+    def list_repos(self, repos: str = '*') -> pd.DataFrame:
         """Get list of repos as pandas DataFrame.
 
         Args:
             repos: Name pattern to filter repos returned. Supports shell-style wildcards.
-            style: Whether to apply styling to the returned DataFrame (only supported in interactive notebooks).
         """
         df = self._list_repos()
         if repos is not None and repos != '*':
@@ -79,15 +78,13 @@ class PachydermClient(PachydermWrapper):
         df['is_tick'] = df['repo'].str.endswith('_tick')
         df['created'] = pd.to_datetime(df['created'], unit='s', utc=True).dt.floor('s') \
             .dt.tz_convert(get_localzone().zone).dt.tz_localize(None)
-        df['size_megabytes'] = (df['size_bytes'] / 1024.0 / 1024.0).round(1)
-        return df.set_index('repo')[['is_tick', 'branches', 'size_megabytes', 'size_bytes', 'created']].sort_index()
+        return df.set_index('repo')[['is_tick', 'branches', 'size_bytes', 'created']].sort_index()
 
-    def list_pipelines(self, pipelines: str = '*', style: bool = True) -> pd.DataFrame:
+    def list_pipelines(self, pipelines: str = '*') -> pd.DataFrame:
         """Get list of pipelines as pandas DataFrame.
 
         Args:
             pipelines: Name pattern to filter pipelines returned. Supports shell-style wildcards.
-            style: Whether to apply styling to the returned DataFrame (only supported in interactive notebooks).
         """
         df = self._list_pipelines().sort_values(['sort'], ascending=False)
         if pipelines is not None and pipelines != '*':
@@ -95,17 +92,16 @@ class PachydermClient(PachydermWrapper):
         df['created'] = pd.to_datetime(df['created'], unit='s', utc=True).dt.floor('s') \
             .dt.tz_convert(get_localzone().zone).dt.tz_localize(None)
         return df.set_index('pipeline')[[
-            'state', 'cron_spec', 'input', 'output_branch', 'parallelism_constant', 'parallelism_coefficient',
+            'state', 'cron_spec', 'input', 'input_repos', 'output_branch', 'parallelism_constant', 'parallelism_coefficient',
             'datum_tries', 'jobs_running', 'jobs_success', 'jobs_failure', 'created'
         ]]
 
-    def list_jobs(self, pipelines: str = '*', n: int = 20, style: bool = True) -> pd.DataFrame:
+    def list_jobs(self, pipelines: str = '*', n: int = 20) -> pd.DataFrame:
         """Get list of jobs as pandas DataFrame.
 
         Args:
             pipelines: Pattern to filter jobs by pipeline name. Supports shell-style wildcards.
             n: Maximum number of jobs returned.
-            style: Whether to apply styling to the returned DataFrame (only supported in interactive notebooks).
         """
         if pipelines is not None and pipelines != '*':
             pipelines = self._list_pipeline_names(pipelines)
