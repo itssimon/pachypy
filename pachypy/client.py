@@ -12,16 +12,11 @@ from datetime import datetime
 from typing import List, Tuple, Callable, Union, Optional
 
 import pandas as pd
-import pandas.io.formats.style as style
 from tzlocal import get_localzone
 from termcolor import cprint
 
 from .base import PachydermWrapper
 from .registry import ContainerRegistry, DockerRegistry, AmazonECRRegistry
-
-
-STYLE_HIGHLIGHT_CSS = 'color: #d65f5f; font-weight: bold'
-STYLE_BAR_COLOR = '#d65f5f44'
 
 
 class PachydermClient(PachydermWrapper):
@@ -69,15 +64,9 @@ class PachydermClient(PachydermWrapper):
         self.pipeline_spec_transformer = pipeline_spec_transformer
         self.cprint = cprint
 
-        try:
-            from IPython import get_ipython
-            self.notebook_mode = get_ipython().__class__.__name__ == 'ZMQInteractiveShell'
-        except ModuleNotFoundError:
-            self.notebook_mode = False
-
         self._cprint(f'Created client for Pachyderm cluster at {self.host}:{self.port}', 'green')
 
-    def list_repos(self, repos: str = '*', style: bool = True) -> Optional[Union[pd.DataFrame, style.Styler]]:
+    def list_repos(self, repos: str = '*', style: bool = True) -> pd.DataFrame:
         """Get list of repos as pandas DataFrame.
 
         Args:
@@ -85,72 +74,32 @@ class PachydermClient(PachydermWrapper):
             style: Whether to apply styling to the returned DataFrame (only supported in interactive notebooks).
         """
         df = self._list_repos()
-        if len(df) == 0:
-            return None
         if repos is not None and repos != '*':
             df = df[df.repo.apply(lambda p: fnmatch(p, repos))]
-
         df['is_tick'] = df['repo'].str.endswith('_tick')
         df['created'] = pd.to_datetime(df['created'], unit='s', utc=True).dt.floor('s') \
             .dt.tz_convert(get_localzone().zone).dt.tz_localize(None)
         df['size_megabytes'] = (df['size_bytes'] / 1024.0 / 1024.0).round(1)
-        df = df.set_index('repo')[['is_tick', 'branches', 'size_megabytes', 'size_bytes', 'created']].sort_index()
+        return df.set_index('repo')[['is_tick', 'branches', 'size_megabytes', 'size_bytes', 'created']].sort_index()
 
-        if self.notebook_mode and style:
-            def highlight_true(s):
-                return [STYLE_HIGHLIGHT_CSS if v else '' for v in s]
-
-            def highlight_gt1(s):
-                return [STYLE_HIGHLIGHT_CSS if v else '' for v in s > 1]
-
-            return df.style \
-                .apply(highlight_gt1, subset=['branches']) \
-                .apply(highlight_true, subset=['is_tick']) \
-                .bar(subset=['size_megabytes'], color=STYLE_BAR_COLOR)
-        else:
-            return df
-
-    def list_pipelines(self, pipelines: str = '*', style: bool = True) -> Optional[Union[pd.DataFrame, style.Styler]]:
+    def list_pipelines(self, pipelines: str = '*', style: bool = True) -> pd.DataFrame:
         """Get list of pipelines as pandas DataFrame.
 
         Args:
             pipelines: Name pattern to filter pipelines returned. Supports shell-style wildcards.
             style: Whether to apply styling to the returned DataFrame (only supported in interactive notebooks).
         """
-        df = self._list_pipelines()
-        if len(df) == 0:
-            return None
+        df = self._list_pipelines().sort_values(['sort'], ascending=False)
         if pipelines is not None and pipelines != '*':
             df = df[df.pipeline.apply(lambda p: fnmatch(p, pipelines))]
-
-        df['parallelism'] = df['parallelism'].fillna(1)
         df['created'] = pd.to_datetime(df['created'], unit='s', utc=True).dt.floor('s') \
             .dt.tz_convert(get_localzone().zone).dt.tz_localize(None)
-        df = df.set_index('pipeline')[['state', 'parallelism', 'created']].sort_index()
+        return df.set_index('pipeline')[[
+            'state', 'cron_spec', 'input', 'output_branch', 'parallelism_constant', 'parallelism_coefficient',
+            'datum_tries', 'jobs_running', 'jobs_success', 'jobs_failure', 'created'
+        ]]
 
-        if self.notebook_mode and style:
-            def style_state(s):
-                color = {
-                    'starting': 'orange',
-                    'running': 'green',
-                    'restarting': 'orange',
-                    'failure': 'red',
-                    'paused': 'orange',
-                    'standby': 'blue'
-                }
-                return [f'color: {color[v]}; font-weight: bold' if v in color else '' for v in s]
-
-            def highlight_gt1(s):
-                return [STYLE_HIGHLIGHT_CSS if v else '' for v in s > 1]
-
-            return df.style \
-                .apply(style_state, subset=['state']) \
-                .apply(highlight_gt1, subset=['parallelism']) \
-                .bar(subset=['parallelism'], color=STYLE_BAR_COLOR)
-        else:
-            return df
-
-    def list_jobs(self, pipelines: str = '*', n: int = 20, style: bool = True) -> Optional[Union[pd.DataFrame, style.Styler]]:
+    def list_jobs(self, pipelines: str = '*', n: int = 20, style: bool = True) -> pd.DataFrame:
         """Get list of jobs as pandas DataFrame.
 
         Args:
@@ -169,7 +118,6 @@ class PachydermClient(PachydermWrapper):
             df = self._list_jobs(n=n)
         if len(df) == 0:
             return None
-
         for col in ['started', 'finished']:
             df[col] = pd.to_datetime(df[col], unit='s', utc=True).dt.floor('s') \
                 .dt.tz_convert(get_localzone().zone).dt.tz_localize(None)
@@ -177,48 +125,20 @@ class PachydermClient(PachydermWrapper):
         df['date'] = df['started'].dt.date
         df['started'] = df['started'].dt.time
         df['finished'] = df['finished'].dt.time
-        df = df.set_index('job')[[
+        return df.set_index('job')[[
             'pipeline', 'state', 'date', 'started', 'finished',
             'data_processed', 'data_skipped', 'data_total',
             'download_bytes', 'upload_bytes',
             'download_time', 'process_time', 'upload_time', 'restart'
         ]]
 
-        if self.notebook_mode and style:
-            def style_state(s):
-                color = {'starting': 'orange', 'running': 'orange', 'failure': 'red', 'success': 'green', 'killed': 'magenta'}
-                return [f'color: {color[v]}; font-weight: bold' if v in color else '' for v in s]
-
-            def highlight_nonzero(s):
-                return [STYLE_HIGHLIGHT_CSS if v else '' for v in s != 0]
-
-            def highlight_zero(s):
-                return [STYLE_HIGHLIGHT_CSS if v else '' for v in s == 0]
-
-            return df.style \
-                .apply(style_state, subset=['state']) \
-                .apply(highlight_nonzero, subset=['restart']) \
-                .apply(highlight_zero, subset=['data_processed']) \
-                .bar(subset=['download_time', 'process_time', 'upload_time'], color=STYLE_BAR_COLOR)
-        else:
-            return df
-
-    def get_logs(
-        self,
-        pipelines: str = '*',
-        output: bool = True,
-        last_job_only: bool = True,
-        user_only: bool = False,
-        return_df: bool = False
-    ) -> Optional[pd.DataFrame]:
+    def get_logs(self, pipelines: str = '*', last_job_only: bool = True, user_only: bool = False) -> pd.DataFrame:
         """Get logs for jobs.
 
         Args:
             pipelines: Pattern to filter logs by pipeline name. Supports shell-style wildcards.
-            output: Whether to print logs to stdout.
             last_job_only: Whether to only show/return logs for the last job of each pipeline.
             user_only: Whether to only show/return logs generated by user code.
-            return_df: Whether to return logs as pandas DataFrame.
         """
         logs = []
         for pipeline in self._list_pipeline_names(pipelines):
@@ -230,7 +150,6 @@ class PachydermClient(PachydermWrapper):
         if len(df) == 0:
             self._cprint('No logs found', 'red')
             return None
-
         df = df[df['job'].notna()]
         df['user'] = df['user'].fillna(False)
         if user_only:
@@ -245,36 +164,9 @@ class PachydermClient(PachydermWrapper):
             df['job_rank'] = df.groupby(['pipeline'])['job_ts_min'].transform(lambda x: x.rank(method='dense', ascending=False))
             df = df[df['job_rank'] == 1]
         df = df.sort_values(['worker_ts_min', 'job', 'worker', 'ts', 'index'], ascending=True)
-        df = df[['ts', 'job', 'pipeline', 'worker', 'user', 'message']].reset_index(drop=True)
+        return df[['ts', 'job', 'pipeline', 'worker', 'user', 'message']].reset_index(drop=True)
 
-        if output:
-            job = None
-            worker = None
-            for _, row in df.iterrows():
-                if row.job != job:
-                    print()
-                    self._cprint(f' Pipeline {row.pipeline} | Job {row.job} ', 'yellow', 'on_grey')
-                if row.worker != worker:
-                    self._cprint(f' Worker {row.worker} ', 'white', 'on_grey')
-                color = 'grey' if row.user else 'blue'
-                message = row.message
-                if message.startswith('WARNING'):
-                    color = 'magenta'
-                elif message.startswith('ERROR'):
-                    color = 'red'
-                self._cprint(f'[{row.ts}] {message}', color)
-                job = row.job
-                worker = row.worker
-
-        if return_df:
-            return df
-
-    def create_pipelines(
-        self,
-        pipelines: str = '*',
-        pipeline_specs: Optional[List[dict]] = None,
-        recreate: bool = False
-    ) -> List[str]:
+    def create_pipelines(self, pipelines: str = '*', pipeline_specs: Optional[List[dict]] = None, recreate: bool = False) -> List[str]:
         """Create or recreate pipelines.
 
         Args:
@@ -288,13 +180,7 @@ class PachydermClient(PachydermWrapper):
         return self._create_or_update_pipelines(pipelines=pipelines, pipeline_specs=pipeline_specs,
                                                 update=False, recreate=recreate, reprocess=False)
 
-    def update_pipelines(
-        self,
-        pipelines: str = '*',
-        pipeline_specs: Optional[List[dict]] = None,
-        recreate: bool = False,
-        reprocess: bool = False
-    ) -> List[str]:
+    def update_pipelines(self, pipelines: str = '*', pipeline_specs: Optional[List[dict]] = None, recreate: bool = False, reprocess: bool = False) -> List[str]:
         """Update or recreate pipelines.
 
         Non-existing pipelines will be created.
