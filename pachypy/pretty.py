@@ -54,7 +54,6 @@ class PrettyPachydermClient(PachydermClient):
             'paused': emojize(':hand: paused', use_aliases=True),
             'standby': emojize(':zzz: standby'),
         })
-        df.loc[2, 'jobs_running'] = 1
         df.loc[df['jobs_running'] > 0, 'State'] = emojize(':running: job running', use_aliases=True),
         df.loc[df['Cron'] != '', 'Cron'] = emojize(':stopwatch:') + ' ' + df['Cron']
         return df[['Pipeline', 'State', 'Cron', 'Input', 'Output', 'Tries', 'Parallelism', 'Jobs S/F', 'Created']].style \
