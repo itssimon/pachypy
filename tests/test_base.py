@@ -9,6 +9,11 @@ def client_base():
     return PachydermClientBase()
 
 
+def skip_if_pachyderm_unavailable(client_base):
+    if not client_base.check_connectivity():
+        pytest.skip('Pachyderm cluster is not available')
+
+
 @mock.patch.dict(os.environ, {'PACHD_ADDRESS': 'test_host:12345'})
 def test_base_init_env():
     from pachypy.base import PachydermClientBase
@@ -32,21 +37,15 @@ def test_base_check_connectivity():
     assert client_base.check_connectivity() is False
 
 
-def test_pachyderm_available(client_base):
-    if not client_base.check_connectivity():
-        pytest.skip('Pachyderm cluster is not available')
-    assert True
-
-
-@pytest.mark.dependency(depends=['test_pachyderm_available'])
 def test_base_list_repos(client_base):
+    skip_if_pachyderm_unavailable(client_base)
     df = client_base._list_repos()
     assert df.shape[1] == 4
     assert all([c in df.columns for c in ['repo', 'size_bytes', 'branches', 'created']])
 
 
-@pytest.mark.dependency(depends=['test_pachyderm_available'])
 def test_base_list_pipelines(client_base):
+    skip_if_pachyderm_unavailable(client_base)
     df = client_base._list_pipelines()
     assert df.shape[1] == 14
     assert all([c in df.columns for c in [
@@ -57,8 +56,8 @@ def test_base_list_pipelines(client_base):
     ]])
 
 
-@pytest.mark.dependency(depends=['test_pachyderm_available'])
 def test_base_list_jobs(client_base):
+    skip_if_pachyderm_unavailable(client_base)
     df = client_base._list_jobs()
     assert df.shape[1] == 14
     assert all([c in df.columns for c in [
@@ -69,8 +68,8 @@ def test_base_list_jobs(client_base):
     ]])
 
 
-@pytest.mark.dependency(depends=['test_pachyderm_available'])
 def test_base_create_update_delete_pipeline(client_base):
+    skip_if_pachyderm_unavailable(client_base)
     try:
         client_base._delete_pipeline('test_pipeline')
     except:
@@ -92,7 +91,7 @@ def test_base_create_update_delete_pipeline(client_base):
     pipelines = client_base._list_pipelines()
     assert len(pipelines) > 0 and 'test_pipeline' in set(pipelines.pipeline)
     assert pipelines.loc[pipelines.pipeline == 'test_pipeline', 'image'].iloc[0] == 'alpine:latest'
-    assert pipelines.loc[pipelines.pipeline == 'test_pipeline', 'cron_input'].iloc[0]
+    assert pipelines.loc[pipelines.pipeline == 'test_pipeline', 'cron_spec'].iloc[0] == '0 * * * *'
 
     repos = client_base._list_repos()
     assert len(repos) > 0 and 'test_pipeline' in set(repos.repo)
