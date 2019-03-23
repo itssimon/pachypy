@@ -1,7 +1,7 @@
 import os
 import time
 import json
-from typing import Optional
+from typing import Optional, Callable
 
 import pandas as pd
 from grpc._channel import _Rendezvous
@@ -20,25 +20,26 @@ class PachydermException(Exception):
         self.status = code.value[1]
 
 
-def retry(f):
-    def retry_wrapper(self, *args):
+def retry(f: Callable):
+    def retry_wrapper(self, *args, **kwargs):
         try:
-            return f(self, *args)
+            return f(self, *args, **kwargs)
         except _Rendezvous as e:
             if e.code().value[1] == 'unavailable' and self._retries < self.max_retries:
                 if self.check_connectivity():
                     self._retries += 1
-                    return retry_wrapper(self, *args)
+                    return retry_wrapper(self, *args, **kwargs)
             raise PachydermException(e.details(), e.code())
         else:
             self._retries = 0
     return retry_wrapper
 
 
-class PachydermWrapper:
+class PachydermClientBase:
 
-    """Wrapper around client classes of the python_pachyderm package for easier interaction.
+    """Client base class handling communication with Pachyderm.
 
+    It is effectively a wrapper around the client classes of the python_pachyderm package.
     This is the basis for the PachydermClient class and is not intended to be used directly.
 
     Args:
@@ -77,7 +78,7 @@ class PachydermWrapper:
         self._retries = 0
 
     def check_connectivity(self, timeout: int = 10) -> bool:
-        """Checks the connectivity to pachd.
+        """Checks the connectivity to pachd. Tries to connect if not currently connected.
 
         The gRPC channel connectivity knows 5 states:
         0 = idle, 1 = connecting, 2 = ready, 3 = transient failure, 4 = shutdown.
