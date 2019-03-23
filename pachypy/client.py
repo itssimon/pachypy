@@ -85,7 +85,7 @@ class PachydermClient(PachydermClientBase):
         Args:
             pipelines: Name pattern to filter pipelines returned. Supports shell-style wildcards.
         """
-        df = self._list_pipelines().sort_values(['sort'], ascending=False)
+        df = self._list_pipelines()
         if pipelines is not None and pipelines != '*':
             df = df[df.pipeline.apply(lambda p: fnmatch(p, pipelines))]
         df['created'] = df['created'].dt.tz_convert(get_localzone().zone).dt.tz_localize(None)
