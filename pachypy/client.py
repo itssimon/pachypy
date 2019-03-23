@@ -15,11 +15,11 @@ import pandas as pd
 from tzlocal import get_localzone
 from termcolor import cprint
 
-from .base import PachydermWrapper
+from .base import PachydermClientBase
 from .registry import ContainerRegistry, DockerRegistry, AmazonECRRegistry
 
 
-class PachydermClient(PachydermWrapper):
+class PachydermClient(PachydermClientBase):
 
     """Pachyderm client aiming to make interaction with a Pachyderm cluster more efficient and user-friendly.
 
@@ -118,12 +118,12 @@ class PachydermClient(PachydermWrapper):
             df[col] = pd.to_datetime(df[col], unit='s', utc=True).dt.floor('s') \
                 .dt.tz_convert(get_localzone().zone).dt.tz_localize(None)
         df = df.reset_index().sort_values(['started', 'index'], ascending=[False, True]).head(n)
-        df['date'] = df['started'].dt.date
-        df['started'] = df['started'].dt.time
-        df['finished'] = df['finished'].dt.time
+        df['duration'] = df['finished'] - df['started']
+        df.loc[df['state'] == 'running', 'duration'] = datetime.now() - df['started']
+        df['progress'] = (df['data_processed'] + df['data_skipped']) / df['data_total']
         return df.set_index('job')[[
-            'pipeline', 'state', 'date', 'started', 'finished',
-            'data_processed', 'data_skipped', 'data_total',
+            'pipeline', 'state', 'started', 'finished', 'duration',
+            'data_processed', 'data_skipped', 'data_total', 'progress',
             'download_bytes', 'upload_bytes',
             'download_time', 'process_time', 'upload_time', 'restart'
         ]]
@@ -403,7 +403,7 @@ class PachydermClient(PachydermWrapper):
     @lru_cache(maxsize=None)
     def _list_pipeline_names(self, match=None):
         if match is None or match == '*':
-            return [p.pipeline.name for p in self.pps_client.list_pipelines().pipeline_info]
+            return [p.pipeline.name for p in self.pps_client.list_pipeline().pipeline_info]
         else:
             return [p for p in self._list_pipeline_names() if fnmatch(p, match)]
 
