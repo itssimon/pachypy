@@ -74,7 +74,7 @@ class PachydermClientBase:
             kwargs['port'] = port
         self.pps_client = PpsClient(**kwargs)
         self.pfs_client = PfsClient(**kwargs)
-        self.max_retries = 3
+        self.max_retries = 2
         self._retries = 0
 
     def check_connectivity(self, timeout: int = 10) -> bool:
@@ -98,7 +98,6 @@ class PachydermClientBase:
                 break
             time.sleep(0.001)
             connectivity = self.pfs_client.channel._channel.check_connectivity_state(False)
-        # 0 = idle, 1 = connecting, 2 = ready, 3 = transient failure, 4 = shutdown
         return connectivity == 2
 
     @retry
@@ -144,10 +143,10 @@ class PachydermClientBase:
                 return '(' + ' ∪ '.join([input_string(j) for j in i.union]) + ')'
             elif i.atom.name:
                 name = i.atom.name + ('/' + i.atom.branch if i.atom.branch != 'master' else '')
-                return f'{name}:{i.atom.glob}'
+                return name + ':' + i.atom.glob
             elif i.pfs.name:
                 name = i.pfs.name + ('/' + i.pfs.branch if i.pfs.branch != 'master' else '')
-                return f'{name}:{i.pfs.glob}'
+                return name + ':' + i.pfs.glob
             elif i.cron.name:
                 return i.cron.name
             elif i.git.name:
