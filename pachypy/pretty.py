@@ -195,15 +195,13 @@ def _style_job_state(s: Iterable[str]) -> List[str]:
 
 
 def _style_job_progress(s: Iterable[str]) -> List[str]:
-    s = s.apply(lambda x: float(x.split('%')[0]))
-
     def css_bar(end):
         css = 'width: 10em; height: 80%;'
         if end > 0:
             css += 'background: linear-gradient(90deg,'
             css += '{c} {e:.1f}%, transparent {e:.1f}%)'.format(e=min(end, 100), c=PROGRESS_BAR_COLOR)
         return css
-
+    s = s.apply(lambda x: float(x.split('%')[0]))
     return [css_bar(x) if not pd.isna(x) and x < 100 else '' for x in s]
 
 
