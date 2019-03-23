@@ -1,7 +1,7 @@
 import os
 import time
 import json
-from typing import Optional, Callable
+from typing import Optional, Callable, Generator
 
 import pandas as pd
 from grpc._channel import _Rendezvous
@@ -110,7 +110,7 @@ class PachydermClientBase:
                 'repo': repo.repo.name,
                 'size_bytes': repo.size_bytes,
                 'branches': [b.name for b in repo.branches],
-                'created': float(f'{repo.created.seconds}.{repo.created.nanos}'),
+                'created': _to_timestamp(repo.created.seconds, repo.created.nanos),
             })
         return pd.DataFrame(res, columns=['repo', 'size_bytes', 'branches', 'created'])
 
@@ -126,7 +126,7 @@ class PachydermClientBase:
             PIPELINE_STANDBY: 'standby',
         }
 
-        def cron_spec(i):
+        def cron_spec(i) -> str:
             if i.cron.spec != '':
                 return i.cron.spec
             cross_or_union = i.cross or i.union
@@ -137,11 +137,11 @@ class PachydermClientBase:
                         return spec
             return ''
 
-        def format_input(i):
+        def input_string(i) -> str:
             if i.cross:
-                return '(' + ' ⨯ '.join([format_input(j) for j in i.cross]) + ')'
+                return '(' + ' ⨯ '.join([input_string(j) for j in i.cross]) + ')'
             elif i.union:
-                return '(' + ' ∪ '.join([format_input(j) for j in i.union]) + ')'
+                return '(' + ' ∪ '.join([input_string(j) for j in i.union]) + ')'
             elif i.atom.name:
                 name = i.atom.name + ('/' + i.atom.branch if i.atom.branch != 'master' else '')
                 return f'{name}:{i.atom.glob}'
@@ -155,25 +155,24 @@ class PachydermClientBase:
             else:
                 return '?'
 
-        def dependencies(i):
+        def input_repos(i) -> Generator[str, None, None]:
             cross_or_union = i.cross or i.union
             if cross_or_union:
                 for j in cross_or_union:
-                    yield from dependencies(j)
+                    yield from input_repos(j)
             elif i.atom.repo:
                 yield i.atom.repo
             elif i.pfs.repo:
                 yield i.pfs.repo
 
-        i = 1
         res = []
         for pipeline in self.pps_client.list_pipeline().pipeline_info:
             res.append({
                 'pipeline': pipeline.pipeline.name,
                 'image': pipeline.transform.image,
                 'cron_spec': cron_spec(pipeline.input),
-                'input': format_input(pipeline.input),
-                'input_repos': list(dependencies(pipeline.input)),
+                'input': input_string(pipeline.input),
+                'input_repos': list(input_repos(pipeline.input)),
                 'output_branch': pipeline.output_branch,
                 'parallelism_constant': pipeline.parallelism_spec.constant,
                 'parallelism_coefficient': pipeline.parallelism_spec.coefficient,
@@ -181,16 +180,14 @@ class PachydermClientBase:
                 'jobs_running': pipeline.job_counts[JOB_RUNNING],
                 'jobs_success': pipeline.job_counts[JOB_SUCCESS],
                 'jobs_failure': pipeline.job_counts[JOB_FAILURE],
-                'created': float(f'{pipeline.created_at.seconds}.{pipeline.created_at.nanos}'),
+                'created': _to_timestamp(pipeline.created_at.seconds, pipeline.created_at.nanos),
                 'state': state_mapping.get(pipeline.state, 'unknown'),
-                'sort': i
             })
-            i += 1
         return pd.DataFrame(res, columns=[
             'pipeline', 'image', 'cron_spec', 'input', 'input_repos', 'output_branch',
             'parallelism_constant', 'parallelism_coefficient', 'datum_tries',
             'jobs_running', 'jobs_success', 'jobs_failure',
-            'created', 'state', 'sort'
+            'created', 'state'
         ])
 
     @retry
@@ -215,15 +212,15 @@ class PachydermClientBase:
                 'job': job.job.id,
                 'pipeline': job.pipeline.name,
                 'state': state_mapping.get(job.state, 'unknown'),
-                'started': float(f'{job.started.seconds}.{job.started.nanos}'),
-                'finished': float(f'{job.finished.seconds}.{job.finished.nanos}'),
+                'started': _to_timestamp(job.started.seconds, job.started.nanos),
+                'finished': _to_timestamp(job.finished.seconds, job.finished.nanos),
                 'restart': job.restart,
                 'data_processed': job.data_processed,
                 'data_skipped': job.data_skipped,
                 'data_total': job.data_total,
-                'download_time': float(f'{job.stats.download_time.seconds}.{job.stats.download_time.nanos}'),
-                'process_time': float(f'{job.stats.process_time.seconds}.{job.stats.process_time.nanos}'),
-                'upload_time': float(f'{job.stats.upload_time.seconds}.{job.stats.upload_time.nanos}'),
+                'download_time': _to_timedelta(job.stats.download_time.seconds, job.stats.download_time.nanos),
+                'process_time': _to_timedelta(job.stats.process_time.seconds, job.stats.process_time.nanos),
+                'upload_time': _to_timedelta(job.stats.upload_time.seconds, job.stats.upload_time.nanos),
                 'download_bytes': job.stats.download_bytes,
                 'upload_bytes': job.stats.upload_bytes
             })
@@ -248,15 +245,17 @@ class PachydermClientBase:
         """
         res = []
         for msg in self.pps_client.get_logs(pipeline_name=pipeline, job_id=job, master=master):
-            res.append({
-                'pipeline': msg.pipeline_name,
-                'job': msg.job_id,
-                'ts': float(f'{msg.ts.seconds}.{msg.ts.nanos}'),
-                'message': msg.message,
-                'worker': msg.worker_id,
-                'datum': msg.datum_id,
-                'user': msg.user,
-            })
+            message = msg.message.strip()
+            if message:
+                res.append({
+                    'pipeline': msg.pipeline_name,
+                    'job': msg.job_id,
+                    'ts': _to_timestamp(msg.ts.seconds, msg.ts.nanos),
+                    'message': message,
+                    'worker': msg.worker_id,
+                    'datum': msg.datum_id,
+                    'user': msg.user,
+                })
         return pd.DataFrame(res, columns=[
             'pipeline', 'job', 'ts', 'message',
             'worker', 'datum', 'user'
@@ -289,3 +288,11 @@ class PachydermClientBase:
             pipeline: Name of pipeline to delete.
         """
         self.pps_client.stub.DeletePipeline(DeletePipelineRequest(pipeline=Pipeline(name=pipeline)))
+
+
+def _to_timestamp(seconds: int, nanos: int) -> pd.Timestamp:
+    return pd.Timestamp(float(f'{seconds}.{nanos}'), unit='s', tz='utc')
+
+
+def _to_timedelta(seconds: int, nanos: int) -> pd.Timedelta:
+    return pd.Timedelta(float(f'{seconds}.{nanos}'), unit='s')
