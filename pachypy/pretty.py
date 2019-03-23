@@ -118,7 +118,7 @@ class PrettyPachydermClient(PachydermClient):
                 'Uploaded': _format_size
             }) \
             .set_properties(**{'text-align': 'left'}) \
-            .set_properties(subset=['Started', 'Duration', 'Progress'], **{'white-space': 'nowrap'}) \
+            .set_properties(subset=['State', 'Started', 'Duration', 'Progress'], **{'white-space': 'nowrap'}) \
             .set_table_styles([dict(selector='th', props=[('text-align', 'left')])]) \
             .hide_index()
 
