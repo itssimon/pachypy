@@ -13,7 +13,6 @@ setup(
         'pyyaml>=5.1',
         'tzlocal>=1.5.1',
         'termcolor>=1.1.0',
-        'emoji>=0.5.1',
     ],
     extras_require={
         'docs':  ['sphinx_rtd_theme>=0.4.3', 'sphinx_autodoc_typehints>=1.6.0'],
