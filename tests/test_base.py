@@ -5,30 +5,30 @@ from unittest import mock
 
 @pytest.fixture(scope='module')
 def pachyderm_wrapper():
-    from pachypy.base import PachydermWrapper
-    return PachydermWrapper()
+    from pachypy.base import PachydermClientBase
+    return PachydermClientBase()
 
 
 @mock.patch.dict(os.environ, {'PACHD_ADDRESS': 'test_host:12345'})
 def test_pachyderm_wrapper_init_env():
-    from pachypy.base import PachydermWrapper
-    pachyderm_wrapper = PachydermWrapper()
+    from pachypy.base import PachydermClientBase
+    pachyderm_wrapper = PachydermClientBase()
     channel_target = pachyderm_wrapper.pps_client.channel._channel.target().decode()
     assert channel_target == 'test_host:12345'
 
 
 def test_pachyderm_wrapper_init():
-    from pachypy.base import PachydermWrapper
-    pachyderm_wrapper = PachydermWrapper(host='test_host')
+    from pachypy.base import PachydermClientBase
+    pachyderm_wrapper = PachydermClientBase(host='test_host')
     channel_target = pachyderm_wrapper.pps_client.channel._channel.target().decode()
     assert channel_target == 'test_host:30650'
 
 
 def test_pachyderm_wrapper_check_connectivity():
-    from pachypy.base import PachydermWrapper
-    pachyderm_wrapper = PachydermWrapper(host='host_that_does_not_exist')
+    from pachypy.base import PachydermClientBase
+    pachyderm_wrapper = PachydermClientBase(host='host_that_does_not_exist')
     assert pachyderm_wrapper.check_connectivity() is False
-    pachyderm_wrapper = PachydermWrapper(host='google.com')
+    pachyderm_wrapper = PachydermClientBase(host='google.com')
     assert pachyderm_wrapper.check_connectivity() is False
 
 
