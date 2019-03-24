@@ -4,6 +4,7 @@
 [![Documentation Status](https://readthedocs.org/projects/pachypy/badge/?version=latest)](https://pachypy.readthedocs.io/en/latest/?badge=latest)
 [![Coverage Status](https://coveralls.io/repos/github/itssimon/pachypy/badge.svg?branch=master)](https://coveralls.io/github/itssimon/pachypy?branch=master)
 ![Stability Experimental](https://img.shields.io/badge/stability-experimental-orange.svg)
+[![Requirements Status](https://requires.io/github/itssimon/pachypy/requirements.svg?branch=master)](https://requires.io/github/itssimon/pachypy/requirements/?branch=master)
 
 This package aims to make interactions with a [Pachyderm](https://github.com/pachyderm/pachyderm) cluster more efficient and user-friendly.
 
