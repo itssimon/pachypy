@@ -8,7 +8,7 @@ from glob import glob
 from fnmatch import fnmatch
 from functools import lru_cache
 from datetime import datetime
-from typing import List, Set, Tuple, Iterable, Callable, Union, Optional
+from typing import List, Tuple, Iterable, Callable, Union, Optional
 
 import pandas as pd
 from tzlocal import get_localzone
@@ -375,9 +375,9 @@ class PachydermClient(PachydermClientBase):
         return updated_pipelines
 
     @lru_cache(maxsize=None)
-    def _list_pipeline_names(self, match: WildcardFilter = None) -> Set[str]:
+    def _list_pipeline_names(self, match: WildcardFilter = None) -> List[str]:
         if match is None:
-            return {p.pipeline.name for p in self.pps_client.list_pipeline().pipeline_info}
+            return [p.pipeline.name for p in self.pps_client.list_pipeline().pipeline_info]
         else:
             return _wildcard_filter(self._list_pipeline_names(), match)
 
@@ -386,11 +386,11 @@ class PachydermClient(PachydermClientBase):
             cprint(text, color=color, on_color=on_color)
 
 
-def _wildcard_filter(x: Iterable[str], pattern: WildcardFilter) -> Set[str]:
+def _wildcard_filter(x: Iterable[str], pattern: WildcardFilter) -> List[str]:
     if pattern is None or pattern == '*':
         return set(x)
     else:
-        return {i for i in x if _wildcard_match(i, pattern)}
+        return [i for i in x if _wildcard_match(i, pattern)]
 
 
 def _wildcard_match(x: str, pattern: WildcardFilter) -> bool:
