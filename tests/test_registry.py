@@ -10,6 +10,9 @@ def docker_registry():
 def test_docker_registry_get_image_digest(docker_registry):
     digest = docker_registry.get_image_digest('alpine', 'latest')
     assert digest.startswith('sha256:')
+    assert docker_registry.get_image_digest.cache_info().currsize > 0
+    docker_registry.clear_cache()
+    assert docker_registry.get_image_digest.cache_info().currsize == 0
 
 
 def test_docker_registry_get_image_digest_exception1(docker_registry):

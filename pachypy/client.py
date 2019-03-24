@@ -218,7 +218,7 @@ class PachydermClient(PachydermClientBase):
         for pipeline in pipelines:
             if pipeline in existing_pipelines:
                 self._cprint(f'Starting pipeline {pipeline}', 'yellow')
-                self.pps_client.start_pipeline(pipeline)
+                self._start_pipeline(pipeline)
                 started_pipelines.append(pipeline)
             else:
                 self._cprint(f'Pipeline {pipeline} does not exist', 'yellow')
@@ -241,7 +241,7 @@ class PachydermClient(PachydermClientBase):
         for pipeline in pipelines:
             if pipeline in existing_pipelines:
                 self._cprint(f'Stopping pipeline {pipeline}', 'yellow')
-                self.pps_client.stop_pipeline(pipeline)
+                self._stop_pipeline(pipeline)
                 stopped_pipelines.append(pipeline)
             else:
                 self._cprint(f'Pipeline {pipeline} does not exist', 'yellow')

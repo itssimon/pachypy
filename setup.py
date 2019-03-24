@@ -10,12 +10,19 @@ setup(
         'python-dxf>=7.5.0',
         'boto3>=1.9.119'
         'pandas>=0.24.2',
-        'pyyaml>=5.1',
+        'pyyaml>=3.13',
         'tzlocal>=1.5.1',
         'termcolor>=1.1.0',
     ],
     extras_require={
-        'docs':  ['sphinx_rtd_theme>=0.4.3', 'sphinx_autodoc_typehints>=1.6.0'],
-        'test': ['pytest>=4.3.1', 'pytest-cov>=2.6.1']
+        'docs':  [
+            'sphinx_rtd_theme>=0.4.3',
+            'sphinx_autodoc_typehints>=1.6.0'
+        ],
+        'test': [
+            'pytest>=4.3.1',
+            'pytest-cov>=2.6.1',
+            'coverage-badge @ https://github.com/dbrgn/coverage-badge/archive/master.zip'
+        ]
     }
 )

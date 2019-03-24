@@ -7,7 +7,7 @@ import pandas as pd
 from grpc._channel import _Rendezvous
 
 from python_pachyderm import PpsClient, PfsClient
-from python_pachyderm.client.pps.pps_pb2 import ListJobRequest, CreatePipelineRequest, DeletePipelineRequest, Pipeline
+from python_pachyderm.client.pps.pps_pb2 import ListJobRequest, CreatePipelineRequest, DeletePipelineRequest, StartPipelineRequest, StopPipelineRequest, Pipeline
 from python_pachyderm.pps_client import JOB_STARTING, JOB_RUNNING, JOB_FAILURE, JOB_SUCCESS, JOB_KILLED
 from python_pachyderm.pps_client import PIPELINE_STARTING, PIPELINE_RUNNING, PIPELINE_RESTARTING, PIPELINE_FAILURE, PIPELINE_PAUSED, PIPELINE_STANDBY
 
@@ -287,6 +287,43 @@ class PachydermClientBase:
             pipeline: Name of pipeline to delete.
         """
         self.pps_client.stub.DeletePipeline(DeletePipelineRequest(pipeline=Pipeline(name=pipeline)))
+
+    @retry
+    def _start_pipeline(self, pipeline: str) -> None:
+        """Restart stopped pipeline.
+
+        Args:
+            pipeline: Name of pipeline to start.
+        """
+        self.pps_client.stub.StartPipeline(StartPipelineRequest(pipeline=Pipeline(name=pipeline)))
+
+    @retry
+    def _stop_pipeline(self, pipeline: str) -> None:
+        """Stop pipeline.
+
+        Args:
+            pipeline: Name of pipeline to stop.
+        """
+        self.pps_client.stub.StopPipeline(StopPipelineRequest(pipeline=Pipeline(name=pipeline)))
+
+    @retry
+    def _create_repo(self, repo: str, description: Optional[str] = None) -> None:
+        """Create new repository in pfs.
+
+        Args:
+            repo: Name of new repository.
+            description: Repository description.
+        """
+        self.pfs_client.create_repo(repo, description=description)
+
+    @retry
+    def _delete_repo(self, repo: str, description: Optional[str] = None) -> None:
+        """Delete repository.
+
+        Args:
+            repo: Name of repository to delete.
+        """
+        self.pfs_client.delete_repo(repo)
 
 
 def _to_timestamp(seconds: int, nanos: int) -> pd.Timestamp:
