@@ -1,15 +1,21 @@
 import os
 import time
 import json
+from datetime import datetime
 from typing import Optional, Callable, Generator
 
 import pandas as pd
+import numpy as np
 from grpc._channel import _Rendezvous
-
 from python_pachyderm import PpsClient, PfsClient
-from python_pachyderm.client.pps.pps_pb2 import ListJobRequest, CreatePipelineRequest, DeletePipelineRequest, StartPipelineRequest, StopPipelineRequest, Pipeline
-from python_pachyderm.pps_client import JOB_STARTING, JOB_RUNNING, JOB_FAILURE, JOB_SUCCESS, JOB_KILLED
-from python_pachyderm.pps_client import PIPELINE_STARTING, PIPELINE_RUNNING, PIPELINE_RESTARTING, PIPELINE_FAILURE, PIPELINE_PAUSED, PIPELINE_STANDBY
+from python_pachyderm.client.pps.pps_pb2 import (
+    Pipeline, ListJobRequest,
+    CreatePipelineRequest, DeletePipelineRequest, StartPipelineRequest, StopPipelineRequest
+)
+from python_pachyderm.pps_client import (
+    JOB_STARTING, JOB_RUNNING, JOB_FAILURE, JOB_SUCCESS, JOB_KILLED,
+    PIPELINE_STARTING, PIPELINE_RUNNING, PIPELINE_RESTARTING, PIPELINE_FAILURE, PIPELINE_PAUSED, PIPELINE_STANDBY
+)
 
 
 class PachydermException(Exception):
@@ -111,7 +117,8 @@ class PachydermClientBase:
                 'branches': [b.name for b in repo.branches],
                 'created': _to_timestamp(repo.created.seconds, repo.created.nanos),
             })
-        return pd.DataFrame(res, columns=['repo', 'size_bytes', 'branches', 'created'])
+        return pd.DataFrame(res, columns=['repo', 'size_bytes', 'branches', 'created']) \
+            .astype({'size_bytes': np.int, 'created': np.datetime64})
 
     @retry
     def _list_pipelines(self) -> pd.DataFrame:
@@ -183,11 +190,18 @@ class PachydermClientBase:
                 'state': state_mapping.get(pipeline.state, 'unknown'),
             })
         return pd.DataFrame(res, columns=[
-            'pipeline', 'image', 'cron_spec', 'input', 'input_repos', 'output_branch',
+            'pipeline', 'state', 'image', 'cron_spec', 'input', 'input_repos', 'output_branch',
             'parallelism_constant', 'parallelism_coefficient', 'datum_tries',
-            'jobs_running', 'jobs_success', 'jobs_failure',
-            'created', 'state'
-        ])
+            'jobs_running', 'jobs_success', 'jobs_failure', 'created',
+        ]).astype({
+            'parallelism_constant': np.int,
+            'parallelism_coefficient': np.float,
+            'datum_tries': np.int,
+            'jobs_running': np.int,
+            'jobs_success': np.int,
+            'jobs_failure': np.int,
+            'created': np.datetime64,
+        })
 
     @retry
     def _list_jobs(self, pipeline: Optional[str] = None, n: int = 20) -> pd.DataFrame:
@@ -231,7 +245,19 @@ class PachydermClientBase:
             'data_processed', 'data_skipped', 'data_total',
             'download_time', 'process_time', 'upload_time',
             'download_bytes', 'upload_bytes'
-        ])
+        ]).astype({
+            'started': np.datetime64,
+            'finished': np.datetime64,
+            'restart': np.int,
+            'data_processed': np.int,
+            'data_skipped': np.int,
+            'data_total': np.int,
+            'download_time': np.timedelta64,
+            'process_time': np.timedelta64,
+            'upload_time': np.timedelta64,
+            'download_bytes': np.float,
+            'upload_bytes': np.float,
+        })
 
     @retry
     def _get_logs(self, pipeline: Optional[str] = None, job: Optional[str] = None, master: bool = False) -> pd.DataFrame:
@@ -258,7 +284,10 @@ class PachydermClientBase:
         return pd.DataFrame(res, columns=[
             'pipeline', 'job', 'ts', 'message',
             'worker', 'datum', 'user'
-        ])
+        ]).astype({
+            'ts': np.datetime64,
+            'user': np.bool,
+        })
 
     @retry
     def _create_pipeline(self, pipeline_specs: dict) -> None:
@@ -325,9 +354,27 @@ class PachydermClientBase:
         """
         self.pfs_client.delete_repo(repo)
 
+    @retry
+    def _commit_timestamp_file(self, repo: str, branch: str = 'master', overwrite: bool = True) -> None:
+        """Commits a timestamp file to given repository to trigger a cron input.
+
+        Args:
+            repo: Name of repository
+            branch: Name of branch. Defaults to 'master'.
+            overwrite: Whether to overwrite an existing timestamp file or to write a new one (Pachyderm >=1.8.6)
+        """
+        if overwrite:
+            timestamp = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
+            commit = self.pfs_client.start_commit(repo, branch=branch)
+            self.pfs_client.delete_file(commit, 'time')
+            self.pfs_client.put_file_bytes(commit, 'time', json.dumps(timestamp).encode('utf-8'))
+            self.pfs_client.finish_commit(commit)
+        else:
+            raise NotImplementedError
+
 
 def _to_timestamp(seconds: int, nanos: int) -> pd.Timestamp:
-    return pd.Timestamp(float(f'{seconds}.{nanos}'), unit='s', tz='utc')
+    return pd.Timestamp(float(f'{seconds}.{nanos}'), unit='s')
 
 
 def _to_timedelta(seconds: int, nanos: int) -> pd.Timedelta:

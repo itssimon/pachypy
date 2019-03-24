@@ -219,6 +219,7 @@ def _format_pipeline_state(s: str) -> str:
 
 def _format_job_state(s: str) -> str:
     return {
+        'unknown': _fa('question') + s,
         'starting': _fa('spinner') + s,
         'running': _fa('running') + s,
         'success': _fa('check') + s,
@@ -257,7 +258,9 @@ def _format_duration(secs: float) -> str:
             n = getattr(d, attr)
             if attr == 'microseconds':
                 n /= 1000
-            u = n != 1 and attr_short or attr_short[:-1]
+                u = attr_short
+            else:
+                u = n != 1 and attr_short or attr_short[:-1]
             ret += f'{n:.0f} {u}, '
             if attr in {'minutes', 'seconds'}:
                 break

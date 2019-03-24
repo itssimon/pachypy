@@ -3,6 +3,7 @@ install:
 
 test:
 	pytest --cov=pachypy/ -vv tests/
+	rm -f coverage.svg
 	coverage-badge -o coverage.svg
 
 build-docs:
