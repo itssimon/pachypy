@@ -2,7 +2,7 @@
 
 ![Python 3.5](https://img.shields.io/badge/python-3.5+-blue.svg)
 [![Documentation Status](https://readthedocs.org/projects/pachypy/badge/?version=latest)](https://pachypy.readthedocs.io/en/latest/?badge=latest)
-![Coverage Status](https://raw.githubusercontent.com/itssimon/pachypy/master/coverage.svg?sanitize=true)
+[![Coverage Status](https://raw.githubusercontent.com/itssimon/pachypy/master/coverage.svg?sanitize=true)](#)
 ![Stability Experimental](https://img.shields.io/badge/stability-experimental-orange.svg)
 [![Requirements Status](https://requires.io/github/itssimon/pachypy/requirements.svg?branch=master)](https://requires.io/github/itssimon/pachypy/requirements/?branch=master)
 
