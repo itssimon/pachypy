@@ -29,6 +29,8 @@ pachypy builds on top of the official [python_pachyderm](https://github.com/pach
 pip install git+https://github.com/itssimon/pachypy.git
 ```
 
+pachypy will be pushed to PyPI and conda-forge soon.
+
 ## Usage in notebook
 
 ### Initialise client
