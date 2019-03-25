@@ -1,4 +1,4 @@
-- pipeline: test1_pipeline1
+- pipeline: test_b_pipeline_1
   transform:
     image: alpine:latest
     cmd: ["/bin/sh", "-c", "date > /pfs/out/date"]
@@ -7,11 +7,11 @@
       name: tick
       spec: 0 * * * *
 
-- pipeline: test1_pipeline2
+- pipeline: test_b_pipeline_2
   transform:
     image: alpine:latest
-    cmd: ["/bin/sh", "-c", "cat /pfs/test1_pipeline/*"]
+    cmd: ["/bin/sh", "-c", "cat /pfs/test_b_pipeline_1/*"]
   input:
     pfs:
-      repo: test1_pipeline
+      repo: test_b_pipeline_1
       glob: "*"

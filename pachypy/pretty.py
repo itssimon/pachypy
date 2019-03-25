@@ -134,9 +134,9 @@ class PrettyPachydermClient(PachydermClient):
                 cprint(f' Worker {row.worker} ', 'white', 'on_grey')
             color = 'grey' if row.user else 'blue'
             message = row.message
-            if message.startswith('WARNING'):
+            if 'warning' in message.lower():
                 color = 'magenta'
-            elif message.startswith('ERROR'):
+            elif 'error' in message.lower() or 'exception' in message.lower():
                 color = 'red'
             cprint(f'[{row.ts}] {message}', color)
             job = row.job

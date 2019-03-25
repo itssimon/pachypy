@@ -1,0 +1,6 @@
+pipeline,state,image,cron_spec,input,input_repos,output_branch,parallelism_constant,parallelism_coefficient,datum_tries,max_queue_size,jobs_running,jobs_success,jobs_failure,created
+test_x_pipeline_5,running,alpine:latest,,test_x_pipeline_4:/,"[""test_x_pipeline_4""]",master,0,0.0,3,1,0,55,0,2019-03-13 00:37:29.455022335
+test_x_pipeline_4,running,alpine:latest,,(test_x_repo_1:/ ⨯ test_x_pipeline_3:/**/*.avro),"[""test_x_repo_1"", ""test_x_pipeline_3""]",master,4,0.0,3,1,0,55,0,2019-03-13 00:37:29.708411932
+test_x_pipeline_3,running,alpine:latest,,(test_x_pipeline_1:/*/*.csv ∪ test_x_pipeline_1_retro:/*/*.csv),"[""test_x_pipeline_1"", ""test_x_pipeline_2""]",master,4,0.0,3,1,0,55,0,2019-03-13 00:37:28.822142124
+test_x_pipeline_2,running,alpine:latest,,test_x_repo_1:/,"[""test_x_repo_1""]",master,0,0.0,3,1,0,6,0,2019-03-13 00:37:28.485625029
+test_x_pipeline_1,running,alpine:latest,"0 21,3,9,15 * * *",tick,[],master,0,0.0,3,1,0,49,0,2019-03-13 00:37:27.890583038

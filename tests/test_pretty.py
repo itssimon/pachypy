@@ -1,3 +1,22 @@
+import pytest
+
+from test_client import patch_adapter
+
+
+@pytest.fixture(scope='module')
+def pretty_client():
+    from pachypy.pretty import PrettyPachydermClient
+    return PrettyPachydermClient()
+
+
+def test_pipeline_sort_key():
+    from pachypy.pretty import _pipeline_sort_key
+    assert _pipeline_sort_key({'a': [], 'b': ['a']}) == {'a': 'a/0', 'b': 'a/1'}
+    assert _pipeline_sort_key({'b': [], 'a': ['b']}) == {'b': 'a/0', 'a': 'a/1'}
+    assert _pipeline_sort_key({'a': [], 'b': [], 'c': ['a', 'b'], 'd': []}) == {'a': 'a/0', 'b': 'a/0', 'c': 'a/1', 'd': 'd/0'}
+    assert _pipeline_sort_key({'a': [], 'b': ['a'], 'c': ['a'], 'd': ['b']}) == {'a': 'a/0', 'b': 'a/1', 'c': 'a/1', 'd': 'a/2'}
+
+
 def test_fa():
     from pachypy.pretty import _fa
     assert 'fa-some-icon' in _fa('some-icon')
@@ -85,3 +104,32 @@ def test_format_size():
     assert _format_size(1200000) == '1.2 MB'
     assert _format_size(100300000) == '100.3 MB'
     assert _format_size(1400000000) == '1.4 GB'
+
+
+@patch_adapter()
+def test_list_repos(pretty_client, **kwargs):
+    html = pretty_client.list_repos()
+    assert 'use.fontawesome.com' in html.data
+    assert '<table' in html.data and html.data.count('<tr') == 7
+
+
+@patch_adapter()
+def test_list_pipelines(pretty_client, **kwargs):
+    html = pretty_client.list_pipelines()
+    assert 'use.fontawesome.com' in html.data
+    assert '<table' in html.data and html.data.count('<tr') == 6
+
+
+@patch_adapter()
+def test_list_jobs(pretty_client, **kwargs):
+    html = pretty_client.list_jobs()
+    assert 'use.fontawesome.com' in html.data
+    assert '<table' in html.data and html.data.count('<tr') == 9
+
+
+@patch_adapter()
+def test_get_logs(pretty_client, capsys, **kwargs):
+    pretty_client.get_logs('test_x_pipeline_5', last_job_only=False)
+    output = capsys.readouterr().out
+    assert output.count('\n') == 25
+    assert output.count(' | Job ') == 2

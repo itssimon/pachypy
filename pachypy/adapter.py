@@ -2,10 +2,9 @@ import os
 import time
 import json
 from datetime import datetime
-from typing import Optional, Callable, Generator
+from typing import Optional, List, Callable, Generator
 
 import pandas as pd
-import numpy as np
 from grpc._channel import _Rendezvous
 from python_pachyderm import PpsClient, PfsClient
 from python_pachyderm.client.pps.pps_pb2 import (
@@ -41,11 +40,11 @@ def retry(f: Callable):
     return retry_wrapper
 
 
-class PachydermClientBase:
+class PachydermClientAdapter:
 
-    """Client base class handling communication with Pachyderm.
+    """Client adapter class handling communication with Pachyderm.
 
-    It is effectively a wrapper around the client classes of the python_pachyderm package.
+    It is effectively a wrapper around the python_pachyderm package.
     This is the basis for the PachydermClient class and is not intended to be used directly.
 
     Args:
@@ -118,7 +117,7 @@ class PachydermClientBase:
                 'created': _to_timestamp(repo.created.seconds, repo.created.nanos),
             })
         return pd.DataFrame(res, columns=['repo', 'size_bytes', 'branches', 'created']) \
-            .astype({'size_bytes': np.int, 'created': np.datetime64})
+            .astype({'size_bytes': 'int', 'created': 'datetime64[ns]'})
 
     @retry
     def _list_pipelines(self) -> pd.DataFrame:
@@ -183,6 +182,7 @@ class PachydermClientBase:
                 'parallelism_constant': pipeline.parallelism_spec.constant,
                 'parallelism_coefficient': pipeline.parallelism_spec.coefficient,
                 'datum_tries': pipeline.datum_tries,
+                'max_queue_size': pipeline.max_queue_size,
                 'jobs_running': pipeline.job_counts[JOB_RUNNING],
                 'jobs_success': pipeline.job_counts[JOB_SUCCESS],
                 'jobs_failure': pipeline.job_counts[JOB_FAILURE],
@@ -191,17 +191,21 @@ class PachydermClientBase:
             })
         return pd.DataFrame(res, columns=[
             'pipeline', 'state', 'image', 'cron_spec', 'input', 'input_repos', 'output_branch',
-            'parallelism_constant', 'parallelism_coefficient', 'datum_tries',
+            'parallelism_constant', 'parallelism_coefficient', 'datum_tries', 'max_queue_size',
             'jobs_running', 'jobs_success', 'jobs_failure', 'created',
         ]).astype({
-            'parallelism_constant': np.int,
-            'parallelism_coefficient': np.float,
-            'datum_tries': np.int,
-            'jobs_running': np.int,
-            'jobs_success': np.int,
-            'jobs_failure': np.int,
-            'created': np.datetime64,
+            'parallelism_constant': 'int',
+            'parallelism_coefficient': 'float',
+            'datum_tries': 'int',
+            'jobs_running': 'int',
+            'jobs_success': 'int',
+            'jobs_failure': 'int',
+            'created': 'datetime64[ns]',
         })
+
+    @retry
+    def _list_pipeline_names(self) -> List[str]:
+        return [p.pipeline.name for p in self.pps_client.list_pipeline().pipeline_info]
 
     @retry
     def _list_jobs(self, pipeline: Optional[str] = None, n: int = 20) -> pd.DataFrame:
@@ -235,7 +239,8 @@ class PachydermClientBase:
                 'process_time': _to_timedelta(job.stats.process_time.seconds, job.stats.process_time.nanos),
                 'upload_time': _to_timedelta(job.stats.upload_time.seconds, job.stats.upload_time.nanos),
                 'download_bytes': job.stats.download_bytes,
-                'upload_bytes': job.stats.upload_bytes
+                'upload_bytes': job.stats.upload_bytes,
+                'output_commit': job.output_commit.id,
             })
             i += 1
             if n is not None and i > n:
@@ -244,19 +249,19 @@ class PachydermClientBase:
             'job', 'pipeline', 'state', 'started', 'finished', 'restart',
             'data_processed', 'data_skipped', 'data_total',
             'download_time', 'process_time', 'upload_time',
-            'download_bytes', 'upload_bytes'
+            'download_bytes', 'upload_bytes', 'output_commit'
         ]).astype({
-            'started': np.datetime64,
-            'finished': np.datetime64,
-            'restart': np.int,
-            'data_processed': np.int,
-            'data_skipped': np.int,
-            'data_total': np.int,
-            'download_time': np.timedelta64,
-            'process_time': np.timedelta64,
-            'upload_time': np.timedelta64,
-            'download_bytes': np.float,
-            'upload_bytes': np.float,
+            'started': 'datetime64[ns]',
+            'finished': 'datetime64[ns]',
+            'restart': 'int',
+            'data_processed': 'int',
+            'data_skipped': 'int',
+            'data_total': 'int',
+            'download_time': 'timedelta64[ns]',
+            'process_time': 'timedelta64[ns]',
+            'upload_time': 'timedelta64[ns]',
+            'download_bytes': 'float',
+            'upload_bytes': 'float',
         })
 
     @retry
@@ -285,8 +290,8 @@ class PachydermClientBase:
             'pipeline', 'job', 'ts', 'message',
             'worker', 'datum', 'user'
         ]).astype({
-            'ts': np.datetime64,
-            'user': np.bool,
+            'ts': 'datetime64[ns]',
+            'user': 'bool',
         })
 
     @retry

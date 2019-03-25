@@ -5,23 +5,25 @@ __all__ = [
 import os
 import yaml
 from glob import glob
+from pathlib import Path
 from fnmatch import fnmatch
 from functools import lru_cache
 from datetime import datetime
-from typing import List, Tuple, Iterable, Callable, Union, Optional
+from typing import List, Tuple, Set, Iterable, Callable, Union, Optional
 
 import pandas as pd
 from tzlocal import get_localzone
 from termcolor import cprint
 
-from .base import PachydermClientBase
+from .adapter import PachydermClientAdapter
 from .registry import ContainerRegistry, DockerRegistry, AmazonECRRegistry
 
 
 WildcardFilter = Optional[Union[str, Iterable[str]]]
+FileGlob = Optional[Union[str, Path, Iterable[str], Iterable[Path]]]
 
 
-class PachydermClient(PachydermClientBase):
+class PachydermClient(PachydermClientAdapter):
 
     """Pachyderm client aiming to make interaction with a Pachyderm cluster more efficient and user-friendly.
 
@@ -44,7 +46,7 @@ class PachydermClient(PachydermClientBase):
         port: Optional[int] = None,
         container_registry: Optional[Union[str, ContainerRegistry]] = 'docker',
         update_image_digests: bool = True,
-        pipeline_spec_files: Optional[Union[str, List[str]]] = None,
+        pipeline_spec_files: FileGlob = None,
         pipeline_spec_transformer: Optional[Callable[[dict], dict]] = None,
         cprint: bool = True
     ):
@@ -67,6 +69,19 @@ class PachydermClient(PachydermClientBase):
         self.cprint = cprint
 
         self._cprint(f'Created client for Pachyderm cluster at {self.host}:{self.port}', 'green')
+
+    @property
+    def pipeline_spec_files(self) -> Set[str]:
+        if self._pipeline_spec_files is None:
+            return set()
+        else:
+            return set.union(*[set(glob(os.path.expanduser(f))) for f in self._pipeline_spec_files])
+
+    @pipeline_spec_files.setter
+    def pipeline_spec_files(self, files: FileGlob):
+        if isinstance(files, str) or isinstance(files, Path):
+            files = [files]
+        self._pipeline_spec_files = files
 
     def list_repos(self, repos: WildcardFilter = '*') -> pd.DataFrame:
         """Get list of repos as pandas DataFrame.
@@ -93,7 +108,7 @@ class PachydermClient(PachydermClientBase):
         df['created'] = _tz_localize(df['created'])
         return df.set_index('pipeline')[[
             'state', 'cron_spec', 'input', 'input_repos', 'output_branch',
-            'parallelism_constant', 'parallelism_coefficient', 'datum_tries',
+            'parallelism_constant', 'parallelism_coefficient', 'datum_tries', 'max_queue_size',
             'jobs_running', 'jobs_success', 'jobs_failure', 'created'
         ]]
 
@@ -119,7 +134,8 @@ class PachydermClient(PachydermClientBase):
         return df.set_index('job')[[
             'pipeline', 'state', 'started', 'finished', 'duration',
             'data_processed', 'data_skipped', 'data_total', 'progress', 'restart',
-            'download_bytes', 'upload_bytes', 'download_time', 'process_time', 'upload_time'
+            'download_time', 'process_time', 'upload_time',
+            'download_bytes', 'upload_bytes', 'output_commit',
         ]]
 
     def get_logs(self, pipelines: WildcardFilter = '*', last_job_only: bool = True, user_only: bool = False) -> pd.DataFrame:
@@ -149,7 +165,7 @@ class PachydermClient(PachydermClientBase):
         return df[['ts', 'job', 'pipeline', 'worker', 'user', 'message']].reset_index(drop=True)
 
     def create_pipelines(self, pipelines: WildcardFilter = '*', pipeline_specs: Optional[List[dict]] = None,
-                         recreate: bool = False) -> List[str]:
+                         recreate: bool = False) -> Tuple[List[str], List[str]]:
         """Create or recreate pipelines.
 
         Args:
@@ -158,13 +174,14 @@ class PachydermClient(PachydermClientBase):
             recreate: Whether to delete existing pipelines before recreating them.
 
         Returns:
-            Names of created pipelines.
+            Created and deleted pipeline names.
         """
-        return self._create_or_update_pipelines(pipelines=pipelines, pipeline_specs=pipeline_specs,
-                                                update=False, recreate=recreate, reprocess=False)
+        res = self._create_or_update_pipelines(pipelines=pipelines, pipeline_specs=pipeline_specs,
+                                               update=False, recreate=recreate, reprocess=False)
+        return res[1], res[2]
 
     def update_pipelines(self, pipelines: WildcardFilter = '*', pipeline_specs: Optional[List[dict]] = None,
-                         recreate: bool = False, reprocess: bool = False) -> List[str]:
+                         recreate: bool = False, reprocess: bool = False) -> Tuple[List[str], List[str], List[str]]:
         """Update or recreate pipelines.
 
         Non-existing pipelines will be created.
@@ -176,7 +193,7 @@ class PachydermClient(PachydermClientBase):
             reprocess: Whether to reprocess datums with updated pipeline.
 
         Returns:
-            Names of updated pipelines.
+            Updated, created and deleted pipeline names.
         """
         return self._create_or_update_pipelines(pipelines=pipelines, pipeline_specs=pipeline_specs,
                                                 update=True, recreate=recreate, reprocess=reprocess)
@@ -255,7 +272,7 @@ class PachydermClient(PachydermClientBase):
     def trigger_pipeline(self, pipeline: str, input_name: str = 'tick') -> None:
         """Trigger a cron-triggered pipeline by committing a timestamp file into its tick repository.
 
-        This simply calls :meth:`~pachypy.base.PachydermClientBase._commit_timestamp_file`,
+        This simply calls :meth:`~pachypy.adapter.PachydermClientAdapter._commit_timestamp_file`,
         expecting the cron input repo of the pipeline to have the default name ``<pipeline>_<input_name>``.
 
         Args:
@@ -273,23 +290,18 @@ class PachydermClient(PachydermClientBase):
         Args:
             pipelines: Pattern to filter pipeline specs by pipeline name. Supports shell-style wildcards.
         """
-        files = self.pipeline_spec_files
-        if isinstance(files, str):
-            files = glob(os.path.expanduser(files))
-        assert isinstance(files, list)
-
         # Subset list of files
+        files = self.pipeline_spec_files
         files_subset = [
             f for f in files
             if _wildcard_match(os.path.basename(f), pipelines) or (isinstance(pipelines, str) and pipelines.startswith(os.path.splitext(os.path.basename(f))[0]))
         ]
-        if len(files_subset) > 0:
-            files = files_subset
+        files = files_subset if len(files_subset) > 0 else files
         self._cprint(f'Reading pipeline specifications from {len(files)} files', 'yellow')
 
         # Read pipeline specs from files
         pipeline_specs = []
-        for file in set(files):
+        for file in files:
             with open(file, 'r') as f:
                 file_content = yaml.safe_load(f)
                 if not isinstance(file_content, list):
@@ -345,18 +357,20 @@ class PachydermClient(PachydermClientBase):
             pass
 
     def _create_or_update_pipelines(self, pipelines: WildcardFilter = '*', pipeline_specs: List[dict] = None,
-                                    update: bool = True, recreate: bool = False, reprocess: bool = False):
+                                    update: bool = True, recreate: bool = False, reprocess: bool = False) -> Tuple[List[str], List[str], List[str]]:
         if pipeline_specs is None:
             pipeline_specs = self.read_pipeline_specs(pipelines)
         elif pipelines != '*':
             pipeline_specs = [p for p in pipeline_specs if _wildcard_match(p['pipeline']['name'], pipelines)]
 
         existing_pipelines = set(self._list_pipeline_names())
+        created_pipelines = []
         updated_pipelines = []
+        deleted_pipelines = []
 
         if recreate:
             pipeline_names = [pipeline_spec['pipeline']['name'] for pipeline_spec in pipeline_specs]
-            self.delete_pipelines(pipeline_names)
+            deleted_pipelines = self.delete_pipelines(pipeline_names)
 
         for pipeline_spec in pipeline_specs:
             pipeline = pipeline_spec['pipeline']['name']
@@ -364,22 +378,20 @@ class PachydermClient(PachydermClientBase):
                 if update:
                     self._cprint(f'Updating pipeline {pipeline}', 'yellow')
                     self._update_pipeline(pipeline_specs, reprocess=reprocess)
+                    updated_pipelines.append(pipeline)
                 else:
                     self._cprint(f'Pipeline {pipeline} already exists', 'yellow')
             else:
                 self._cprint(f'Creating pipeline {pipeline}', 'yellow')
                 self._create_pipeline(pipeline_specs)
-            updated_pipelines.append(pipeline)
+                created_pipelines.append(pipeline)
 
         self._list_pipeline_names.cache_clear()
-        return updated_pipelines
+        return updated_pipelines, created_pipelines, deleted_pipelines
 
     @lru_cache(maxsize=None)
     def _list_pipeline_names(self, match: WildcardFilter = None) -> List[str]:
-        if match is None:
-            return [p.pipeline.name for p in self.pps_client.list_pipeline().pipeline_info]
-        else:
-            return _wildcard_filter(self._list_pipeline_names(), match)
+        return super()._list_pipeline_names() if match is None else _wildcard_filter(self._list_pipeline_names(), match)
 
     def _cprint(self, text, color=None, on_color=None):
         if self.cprint:
@@ -388,7 +400,7 @@ class PachydermClient(PachydermClientBase):
 
 def _wildcard_filter(x: Iterable[str], pattern: WildcardFilter) -> List[str]:
     if pattern is None or pattern == '*':
-        return set(x)
+        return list(x)
     else:
         return [i for i in x if _wildcard_match(i, pattern)]
 
