@@ -121,11 +121,11 @@ def test_read_pipeline_specs(client):
 
 @patch_adapter()
 def test_create_update_delete_pipelines(client, **kwargs):
-    _list_pipeline_names = 'pachypy.adapter.PachydermAdapter.list_pipeline_names'
+    list_pipeline_names = 'pachypy.adapter.PachydermAdapter.list_pipeline_names'
     pipelines = ['test_a_pipeline_1', 'test_a_pipeline_2']
-    with patch(_list_pipeline_names, MagicMock(return_value=[])):
+    with patch(list_pipeline_names, MagicMock(return_value=[])):
         assert client.create_pipelines('test_a*') == (pipelines, [])
-    with patch(_list_pipeline_names, MagicMock(return_value=pipelines)):
+    with patch(list_pipeline_names, MagicMock(return_value=pipelines)):
         assert client.update_pipelines('test_a*') == (pipelines, [], [])
         assert client.update_pipelines('test_a*', recreate=True) == ([], pipelines, pipelines[::-1])
         assert client.delete_pipelines('test_a*') == pipelines[::-1]
@@ -133,9 +133,9 @@ def test_create_update_delete_pipelines(client, **kwargs):
 
 @patch_adapter()
 def test_stop_start_pipelines(client, **kwargs):
-    _list_pipeline_names = 'pachypy.adapter.PachydermAdapter.list_pipeline_names'
+    list_pipeline_names = 'pachypy.adapter.PachydermAdapter.list_pipeline_names'
     pipelines = ['test_a_pipeline_1', 'test_a_pipeline_2']
-    with patch(_list_pipeline_names, MagicMock(return_value=pipelines)):
+    with patch(list_pipeline_names, MagicMock(return_value=pipelines)):
         assert client.stop_pipelines('test_a*') == pipelines
         assert client.start_pipelines('test_a*') == pipelines
 
