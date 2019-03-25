@@ -40,7 +40,7 @@ def retry(f: Callable):
     return retry_wrapper
 
 
-class PachydermClientAdapter:
+class PachydermAdapter:
 
     """Client adapter class handling communication with Pachyderm.
 
@@ -106,7 +106,7 @@ class PachydermClientAdapter:
         return connectivity == 2
 
     @retry
-    def _list_repos(self) -> pd.DataFrame:
+    def list_repos(self) -> pd.DataFrame:
         """Returns list of repositories."""
         res = []
         for repo in self.pfs_client.list_repo():
@@ -120,7 +120,7 @@ class PachydermClientAdapter:
             .astype({'size_bytes': 'int', 'created': 'datetime64[ns]'})
 
     @retry
-    def _list_pipelines(self) -> pd.DataFrame:
+    def list_pipelines(self) -> pd.DataFrame:
         """Returns list of pipelines."""
         state_mapping = {
             PIPELINE_STARTING: 'starting',
@@ -204,11 +204,11 @@ class PachydermClientAdapter:
         })
 
     @retry
-    def _list_pipeline_names(self) -> List[str]:
+    def list_pipeline_names(self) -> List[str]:
         return [p.pipeline.name for p in self.pps_client.list_pipeline().pipeline_info]
 
     @retry
-    def _list_jobs(self, pipeline: Optional[str] = None, n: int = 20) -> pd.DataFrame:
+    def list_jobs(self, pipeline: Optional[str] = None, n: int = 20) -> pd.DataFrame:
         """Returns list of last n jobs.
 
         Args:
@@ -265,7 +265,7 @@ class PachydermClientAdapter:
         })
 
     @retry
-    def _get_logs(self, pipeline: Optional[str] = None, job: Optional[str] = None, master: bool = False) -> pd.DataFrame:
+    def get_logs(self, pipeline: Optional[str] = None, job: Optional[str] = None, master: bool = False) -> pd.DataFrame:
         """Returns log entries.
 
         Args:
@@ -295,7 +295,7 @@ class PachydermClientAdapter:
         })
 
     @retry
-    def _create_pipeline(self, pipeline_specs: dict) -> None:
+    def create_pipeline(self, pipeline_specs: dict) -> None:
         """Create pipeline with given specs.
 
         Args:
@@ -304,7 +304,7 @@ class PachydermClientAdapter:
         self.pps_client.stub.CreatePipeline(CreatePipelineRequest(**pipeline_specs))
 
     @retry
-    def _update_pipeline(self, pipeline_specs: dict, reprocess: bool = False) -> None:
+    def update_pipeline(self, pipeline_specs: dict, reprocess: bool = False) -> None:
         """Update existing pipeline with given specs.
 
         Args:
@@ -314,7 +314,7 @@ class PachydermClientAdapter:
         self.pps_client.stub.CreatePipeline(CreatePipelineRequest(update=True, reprocess=reprocess, **pipeline_specs))
 
     @retry
-    def _delete_pipeline(self, pipeline: str) -> None:
+    def delete_pipeline(self, pipeline: str) -> None:
         """Delete pipeline.
 
         Args:
@@ -323,7 +323,7 @@ class PachydermClientAdapter:
         self.pps_client.stub.DeletePipeline(DeletePipelineRequest(pipeline=Pipeline(name=pipeline)))
 
     @retry
-    def _start_pipeline(self, pipeline: str) -> None:
+    def start_pipeline(self, pipeline: str) -> None:
         """Restart stopped pipeline.
 
         Args:
@@ -332,7 +332,7 @@ class PachydermClientAdapter:
         self.pps_client.stub.StartPipeline(StartPipelineRequest(pipeline=Pipeline(name=pipeline)))
 
     @retry
-    def _stop_pipeline(self, pipeline: str) -> None:
+    def stop_pipeline(self, pipeline: str) -> None:
         """Stop pipeline.
 
         Args:
@@ -341,7 +341,7 @@ class PachydermClientAdapter:
         self.pps_client.stub.StopPipeline(StopPipelineRequest(pipeline=Pipeline(name=pipeline)))
 
     @retry
-    def _create_repo(self, repo: str, description: Optional[str] = None) -> None:
+    def create_repo(self, repo: str, description: Optional[str] = None) -> None:
         """Create new repository in pfs.
 
         Args:
@@ -351,7 +351,7 @@ class PachydermClientAdapter:
         self.pfs_client.create_repo(repo, description=description)
 
     @retry
-    def _delete_repo(self, repo: str, description: Optional[str] = None) -> None:
+    def delete_repo(self, repo: str, description: Optional[str] = None) -> None:
         """Delete repository.
 
         Args:
@@ -360,7 +360,7 @@ class PachydermClientAdapter:
         self.pfs_client.delete_repo(repo)
 
     @retry
-    def _commit_timestamp_file(self, repo: str, branch: str = 'master', overwrite: bool = True) -> None:
+    def commit_timestamp_file(self, repo: str, branch: str = 'master', overwrite: bool = True) -> None:
         """Commits a timestamp file to given repository to trigger a cron input.
 
         Args:

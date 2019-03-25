@@ -25,17 +25,17 @@ def mock_get_logs(_, pipeline=None):
 
 def patch_adapter():
     return patch.multiple(
-        'pachypy.adapter.PachydermClientAdapter',
-        _list_repos=lambda _: get_mock_from_csv('list_repos.csv', datetime_cols=['created']),
-        _list_pipelines=lambda _: get_mock_from_csv('list_pipelines.csv', datetime_cols=['created']),
-        _list_pipeline_names=lambda _: get_mock_from_csv('list_pipelines.csv')['pipeline'].tolist(),
-        _list_jobs=mock_list_jobs,
-        _get_logs=mock_get_logs,
-        _create_pipeline=DEFAULT,
-        _update_pipeline=DEFAULT,
-        _delete_pipeline=DEFAULT,
-        _start_pipeline=DEFAULT,
-        _stop_pipeline=DEFAULT,
+        'pachypy.adapter.PachydermAdapter',
+        list_repos=lambda _: get_mock_from_csv('list_repos.csv', datetime_cols=['created']),
+        list_pipelines=lambda _: get_mock_from_csv('list_pipelines.csv', datetime_cols=['created']),
+        list_pipeline_names=lambda _: get_mock_from_csv('list_pipelines.csv')['pipeline'].tolist(),
+        list_jobs=mock_list_jobs,
+        get_logs=mock_get_logs,
+        create_pipeline=DEFAULT,
+        update_pipeline=DEFAULT,
+        delete_pipeline=DEFAULT,
+        start_pipeline=DEFAULT,
+        stop_pipeline=DEFAULT,
     )
 
 
@@ -121,7 +121,7 @@ def test_read_pipeline_specs(client):
 
 @patch_adapter()
 def test_create_update_delete_pipelines(client, **kwargs):
-    _list_pipeline_names = 'pachypy.adapter.PachydermClientAdapter._list_pipeline_names'
+    _list_pipeline_names = 'pachypy.adapter.PachydermAdapter.list_pipeline_names'
     pipelines = ['test_a_pipeline_1', 'test_a_pipeline_2']
     with patch(_list_pipeline_names, MagicMock(return_value=[])):
         assert client.create_pipelines('test_a*') == (pipelines, [])
@@ -133,7 +133,7 @@ def test_create_update_delete_pipelines(client, **kwargs):
 
 @patch_adapter()
 def test_stop_start_pipelines(client, **kwargs):
-    _list_pipeline_names = 'pachypy.adapter.PachydermClientAdapter._list_pipeline_names'
+    _list_pipeline_names = 'pachypy.adapter.PachydermAdapter.list_pipeline_names'
     pipelines = ['test_a_pipeline_1', 'test_a_pipeline_2']
     with patch(_list_pipeline_names, MagicMock(return_value=pipelines)):
         assert client.stop_pipelines('test_a*') == pipelines
