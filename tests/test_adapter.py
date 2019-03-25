@@ -54,6 +54,11 @@ def pipeline_spec_3():
         },
         'input': {
             'union': [{
+                'cron': {
+                    'name': 'tick',
+                    'spec': '0 * * * *'
+                }
+            }, {
                 'pfs': {
                     'repo': 'test_pipeline_1',
                     'glob': '*'
@@ -61,6 +66,32 @@ def pipeline_spec_3():
             }, {
                 'pfs': {
                     'repo': 'test_pipeline_2',
+                    'glob': '*'
+                }
+            }]
+        }
+    }
+
+
+@pytest.fixture(scope='module')
+def pipeline_spec_4():
+    return {
+        'pipeline': {'name': 'test_pipeline_4'},
+        'transform': {
+            'image': 'alpine:latest',
+            'cmd': ['/bin/sh', '-c', 'cat /pfs/*/*']
+        },
+        'input': {
+            'cross': [{
+                'atom': {
+                    'repo': 'test_pipeline_1',
+                    'branch': 'test',
+                    'glob': '*'
+                }
+            }, {
+                'atom': {
+                    'repo': 'test_pipeline_2',
+                    'branch': 'test',
                     'glob': '*'
                 }
             }]
@@ -96,7 +127,6 @@ def await_pipeline_new_state(adapter, pipeline_name, initial_state='starting', t
         time.sleep(1)
         pipelines = adapter._list_pipelines()
         state = pipelines.loc[pipelines.pipeline == pipeline_name, 'state'].iloc[0]
-
     return state
 
 
@@ -141,9 +171,16 @@ def test_list_repos(adapter):
     assert all([c in df.columns for c in ['repo', 'size_bytes', 'branches', 'created']])
 
 
-def test_list_pipelines(adapter):
+def test_list_pipelines(adapter, pipeline_spec_1, pipeline_spec_2, pipeline_spec_3, pipeline_spec_4):
     skip_if_pachyderm_unavailable(adapter)
+    pipeline_specs = [pipeline_spec_1, pipeline_spec_2, pipeline_spec_3, pipeline_spec_4]
+    for pipeline_spec in pipeline_specs:
+        delete_pipeline_if_exists(adapter, pipeline_spec['pipeline']['name'])
+        adapter._create_pipeline(pipeline_spec)
     df = adapter._list_pipelines()
+    for pipeline_spec in pipeline_specs[::-1]:
+        delete_pipeline_if_exists(adapter, pipeline_spec['pipeline']['name'])
+    assert df.shape[0] >= 4
     assert df.shape[1] == 15
     assert all([c in df.columns for c in [
         'pipeline', 'image', 'cron_spec', 'input', 'input_repos', 'output_branch',
@@ -151,6 +188,11 @@ def test_list_pipelines(adapter):
         'jobs_running', 'jobs_success', 'jobs_failure',
         'created', 'state'
     ]])
+    assert set(df.loc[df['pipeline'] == 'test_pipeline_3', 'input_repos'].iloc[0]) == {'test_pipeline_1', 'test_pipeline_2'}
+    assert df.loc[df['pipeline'] == 'test_pipeline_3', 'input'].iloc[0] == '(tick ∪ test_pipeline_1:* ∪ test_pipeline_2:*)'
+    assert df.loc[df['pipeline'] == 'test_pipeline_3', 'cron_spec'].iloc[0] == '0 * * * *'
+    assert set(df.loc[df['pipeline'] == 'test_pipeline_4', 'input_repos'].iloc[0]) == {'test_pipeline_1', 'test_pipeline_2'}
+    assert df.loc[df['pipeline'] == 'test_pipeline_4', 'input'].iloc[0] == '(test_pipeline_1/test:* ⨯ test_pipeline_2/test:*)'
 
 
 def test_list_jobs(adapter):

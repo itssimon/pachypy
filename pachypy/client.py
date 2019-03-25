@@ -208,20 +208,11 @@ class PachydermClient(PachydermClientAdapter):
             Names of deleted pipelines.
         """
         pipelines = pipelines if isinstance(pipelines, list) else self._list_pipeline_names(pipelines)
-        existing_pipelines = set(self._list_pipeline_names())
-        deleted_pipelines = []
-
-        # Delete existing pipelines in reverse order
         for pipeline in pipelines[::-1]:
-            if pipeline in existing_pipelines:
-                self._cprint(f'Deleting pipeline {pipeline}', 'yellow')
-                self._delete_pipeline(pipeline)
-                deleted_pipelines.append(pipeline)
-            else:
-                self._cprint(f'Pipeline {pipeline} does not exist', 'yellow')
-
+            self._cprint(f'Deleting pipeline {pipeline}', 'yellow')
+            self._delete_pipeline(pipeline)
         self._list_pipeline_names.cache_clear()
-        return deleted_pipelines
+        return pipelines[::-1]
 
     def start_pipelines(self, pipelines: WildcardFilter) -> List[str]:
         """Restart stopped pipelines.
@@ -233,18 +224,10 @@ class PachydermClient(PachydermClientAdapter):
             Names of started pipelines.
         """
         pipelines = pipelines if isinstance(pipelines, list) else self._list_pipeline_names(pipelines)
-        existing_pipelines = set(self._list_pipeline_names())
-        started_pipelines = []
-
         for pipeline in pipelines:
-            if pipeline in existing_pipelines:
-                self._cprint(f'Starting pipeline {pipeline}', 'yellow')
-                self._start_pipeline(pipeline)
-                started_pipelines.append(pipeline)
-            else:
-                self._cprint(f'Pipeline {pipeline} does not exist', 'yellow')
-
-        return started_pipelines
+            self._cprint(f'Starting pipeline {pipeline}', 'yellow')
+            self._start_pipeline(pipeline)
+        return pipelines
 
     def stop_pipelines(self, pipelines: WildcardFilter) -> List[str]:
         """Stop running pipelines.
@@ -256,18 +239,10 @@ class PachydermClient(PachydermClientAdapter):
             Names of stopped pipelines.
         """
         pipelines = pipelines if isinstance(pipelines, list) else self._list_pipeline_names(pipelines)
-        existing_pipelines = set(self._list_pipeline_names())
-        stopped_pipelines = []
-
         for pipeline in pipelines:
-            if pipeline in existing_pipelines:
-                self._cprint(f'Stopping pipeline {pipeline}', 'yellow')
-                self._stop_pipeline(pipeline)
-                stopped_pipelines.append(pipeline)
-            else:
-                self._cprint(f'Pipeline {pipeline} does not exist', 'yellow')
-
-        return stopped_pipelines
+            self._cprint(f'Stopping pipeline {pipeline}', 'yellow')
+            self._stop_pipeline(pipeline)
+        return pipelines
 
     def trigger_pipeline(self, pipeline: str, input_name: str = 'tick') -> None:
         """Trigger a cron-triggered pipeline by committing a timestamp file into its tick repository.

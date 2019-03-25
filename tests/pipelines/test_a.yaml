@@ -9,7 +9,6 @@
 
 - pipeline: test_a_pipeline_2
   transform:
-    image: alpine:latest
     cmd: ["/bin/sh", "-c", "cat /pfs/test_a_pipeline_1/*"]
   input:
     pfs:

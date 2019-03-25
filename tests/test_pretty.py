@@ -104,6 +104,8 @@ def test_format_size():
     assert _format_size(1200000) == '1.2 MB'
     assert _format_size(100300000) == '100.3 MB'
     assert _format_size(1400000000) == '1.4 GB'
+    assert _format_size(1500000000000) == '1.5 TB'
+    assert _format_size(1600000000000000) == '1.6 PB'
 
 
 @patch_adapter()

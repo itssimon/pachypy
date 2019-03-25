@@ -115,6 +115,7 @@ def test_read_pipeline_specs(client):
     pipeline_specs = client.read_pipeline_specs('test_a*')
     assert isinstance(pipeline_specs, list) and len(pipeline_specs) == 2
     assert pipeline_specs[0]['pipeline']['name'] == 'test_a_pipeline_1'
+    assert pipeline_specs[0]['transform']['image'] == pipeline_specs[1]['transform']['image']
     assert pipeline_specs[0]['test'] is True
 
 
