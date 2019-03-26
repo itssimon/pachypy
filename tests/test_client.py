@@ -53,17 +53,15 @@ def client(pipeline_spec_files_path):
     )
 
 
-def test_init():
-    from pachypy.client import PachydermClient
-    from pachypy.registry import DockerRegistry, AmazonECRRegistry
-    assert isinstance(PachydermClient(container_registry='docker').container_registry, DockerRegistry)
-    assert isinstance(PachydermClient(container_registry='ecr').container_registry, AmazonECRRegistry)
-    assert isinstance(PachydermClient(container_registry='registry.example.com').container_registry, DockerRegistry)
-    assert PachydermClient(container_registry=None).container_registry is None
+def test_init_registry_adapters(client):
+    from pachypy.registry import DockerRegistryAdapter, AmazonECRAdapter  # , GCRAdapter
+    assert isinstance(client.docker_registry_adapter, DockerRegistryAdapter)
+    assert isinstance(client.ecr_adapter, AmazonECRAdapter)
+    # assert isinstance(client.gcr_adapter, GCRAdapter)
 
 
 @patch_adapter()
-def test_list_repos(client, **kwargs):
+def test_list_repos(client, **mocks):
     df = client.list_repos()
     assert len(df) == 6
     assert df['is_tick'].sum() == 1
@@ -71,14 +69,14 @@ def test_list_repos(client, **kwargs):
 
 
 @patch_adapter()
-def test_list_pipelines(client, **kwargs):
+def test_list_pipelines(client, **mocks):
     assert len(client.list_pipelines()) == 5
     assert len(client.list_pipelines('test_x_pipeline_?')) == 5
     assert len(client.list_pipelines('test_x_pipeline_1')) == 1
 
 
 @patch_adapter()
-def test_list_jobs(client, **kwargs):
+def test_list_jobs(client, **mocks):
     df = client.list_jobs()
     assert len(df) == 8
     assert df['duration'].isna().sum() == 0
@@ -89,7 +87,7 @@ def test_list_jobs(client, **kwargs):
 
 
 @patch_adapter()
-def test_get_logs(client, **kwargs):
+def test_get_logs(client, **mocks):
     assert len(client.get_logs('test_x_pipeline_5')) == 10
     assert len(client.get_logs('test_x_pipeline_5', user_only=True)) == 7
     assert len(client.get_logs('test_x_pipeline_5', last_job_only=False)) == 20
@@ -120,19 +118,19 @@ def test_read_pipeline_specs(client):
 
 
 @patch_adapter()
-def test_create_update_delete_pipelines(client, **kwargs):
+def test_create_update_delete_pipelines(client, **mocks):
     list_pipeline_names = 'pachypy.adapter.PachydermAdapter.list_pipeline_names'
     pipelines = ['test_a_pipeline_1', 'test_a_pipeline_2']
     with patch(list_pipeline_names, MagicMock(return_value=[])):
-        assert client.create_pipelines('test_a*') == (pipelines, [])
+        assert client.create_pipelines('test_a*') == (pipelines, [], [])
     with patch(list_pipeline_names, MagicMock(return_value=pipelines)):
-        assert client.update_pipelines('test_a*') == (pipelines, [], [])
-        assert client.update_pipelines('test_a*', recreate=True) == ([], pipelines, pipelines[::-1])
+        assert client.update_pipelines('test_a*') == ([], pipelines, [])
+        assert client.update_pipelines('test_a*', recreate=True) == (pipelines, [], pipelines[::-1])
         assert client.delete_pipelines('test_a*') == pipelines[::-1]
 
 
 @patch_adapter()
-def test_stop_start_pipelines(client, **kwargs):
+def test_stop_start_pipelines(client, **mocks):
     list_pipeline_names = 'pachypy.adapter.PachydermAdapter.list_pipeline_names'
     pipelines = ['test_a_pipeline_1', 'test_a_pipeline_2']
     with patch(list_pipeline_names, MagicMock(return_value=pipelines)):

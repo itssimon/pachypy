@@ -1,5 +1,5 @@
 __all__ = [
-    'DockerRegistry', 'AmazonECRRegistry'
+    'DockerRegistryAdapter', 'AmazonECRAdapter', 'GCRAdapter'
 ]
 
 import os
@@ -18,13 +18,13 @@ class RegistryImageNotFoundException(Exception):
     pass
 
 
-class ContainerRegistry:
+class ContainerRegistryAdapter:
 
-    """Container registry handler base class."""
+    """Container registry adapter base class."""
 
     @lru_cache()
     def get_image_digest(self, repository: str, tag: str) -> str:
-        """Retrieve the latest image digest.
+        """Retrieve the latest image digest from container registry.
 
         Args:
             repository: Repository.
@@ -37,9 +37,9 @@ class ContainerRegistry:
         self.get_image_digest.cache_clear()
 
 
-class DockerRegistry(ContainerRegistry):
+class DockerRegistryAdapter(ContainerRegistryAdapter):
 
-    """Docker registry handler.
+    """Docker registry adapter.
 
     Args:
         registry_host: Hostname of Docker registry. Defaults to Docker Hub.
@@ -96,9 +96,9 @@ class DockerRegistry(ContainerRegistry):
             return data.get('auths', {}).get(hub_index, {}).get('auth', None)
 
 
-class AmazonECRRegistry(ContainerRegistry):
+class AmazonECRAdapter(ContainerRegistryAdapter):
 
-    """Amazon Elastic Container Registry (ECR) handler using boto3.
+    """Amazon Elastic Container Registry (ECR) adapter using boto3.
 
     Args:
         aws_access_key_id: AWS access key ID.
@@ -116,3 +116,14 @@ class AmazonECRRegistry(ContainerRegistry):
             return res['images'][0]['imageId']['imageDigest']
         except KeyError:
             raise RegistryImageNotFoundException(f'Image {repository}:{tag} not found in Amazon ECR')
+
+
+class GCRAdapter(ContainerRegistryAdapter):
+
+    """Google Cloud Container Registry (gcr.io) adapter."""
+
+    def __init__(self):
+        raise NotImplementedError
+
+    def _get_image_digest_from_ecr(self, repository: str, tag: str) -> str:
+        raise NotImplementedError

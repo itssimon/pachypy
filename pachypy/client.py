@@ -3,12 +3,14 @@ __all__ = [
 ]
 
 import os
+import re
 import yaml
 from glob import glob
 from pathlib import Path
 from fnmatch import fnmatch
 from functools import lru_cache
 from datetime import datetime
+from collections import namedtuple
 from typing import List, Tuple, Set, Iterable, Callable, Union, Optional
 
 import pandas as pd
@@ -16,11 +18,12 @@ from tzlocal import get_localzone
 from termcolor import cprint
 
 from .adapter import PachydermAdapter
-from .registry import ContainerRegistry, DockerRegistry, AmazonECRRegistry
+from .registry import DockerRegistryAdapter, AmazonECRAdapter, GCRAdapter
 
 
 WildcardFilter = Optional[Union[str, Iterable[str]]]
 FileGlob = Optional[Union[str, Path, Iterable[str], Iterable[Path]]]
+PipelineChanges = namedtuple('PipelineChanges', ['created', 'updated', 'deleted'])
 
 
 class PachydermClient:
@@ -30,8 +33,6 @@ class PachydermClient:
     Args:
         host: Hostname or IP address to reach pachd. Attempts to get this from PACHD_ADDRESS or ``~/.pachyderm/config.json`` if not set.
         port: Port on which pachd is listening (usually 30650).
-        container_registry: 'docker' for Docker Hub, 'ecr' for Amazon ECR, a ContainerRegistry instance or
-            a Docker registry hostname. Used to retrieve image digests.
         update_image_digests: Whether to update the image field in pipeline specs with the latest image digest
             to force Kubernetes to pull the latest version from the container registry.
         pipeline_spec_files: Glob pattern or list of file paths to pipeline specs in YAML format.
@@ -44,30 +45,16 @@ class PachydermClient:
         self,
         host: Optional[str] = None,
         port: Optional[int] = None,
-        container_registry: Optional[Union[str, ContainerRegistry]] = 'docker',
         update_image_digests: bool = True,
         pipeline_spec_files: FileGlob = None,
         pipeline_spec_transformer: Optional[Callable[[dict], dict]] = None,
         cprint: bool = True
     ):
         self.adapter = PachydermAdapter(host=host, port=port)
-
-        if container_registry == 'docker':
-            self.container_registry = DockerRegistry()
-        elif container_registry == 'ecr':
-            self.container_registry = AmazonECRRegistry()
-        elif isinstance(container_registry, ContainerRegistry):
-            self.container_registry = container_registry
-        elif isinstance(container_registry, str):
-            self.container_registry = DockerRegistry(container_registry)
-        else:
-            self.container_registry = None
-
         self.update_image_digests = update_image_digests
         self.pipeline_spec_files = pipeline_spec_files
         self.pipeline_spec_transformer = pipeline_spec_transformer
         self.cprint = cprint
-
         self._cprint(f'Created client for Pachyderm cluster at {self.adapter.host}:{self.adapter.port}', 'green')
 
     @property
@@ -82,6 +69,36 @@ class PachydermClient:
         if isinstance(files, str) or isinstance(files, Path):
             files = [files]
         self._pipeline_spec_files = files
+
+    @property
+    def docker_registry_adapter(self):
+        if not hasattr(self, '_docker_registry_adapter'):
+            self._docker_registry_adapter = DockerRegistryAdapter()
+        return self._docker_registry_adapter
+
+    @docker_registry_adapter.setter
+    def docker_registry_adapter(self, adapter: DockerRegistryAdapter):
+        self._docker_registry_adapter = adapter
+
+    @property
+    def ecr_adapter(self):
+        if not hasattr(self, '_ecr_adapter'):
+            self._ecr_adapter = AmazonECRAdapter()
+        return self._ecr_adapter
+
+    @ecr_adapter.setter
+    def ecr_adapter(self, adapter: AmazonECRAdapter):
+        self._ecr_adapter = adapter
+
+    @property
+    def gcr_adapter(self):
+        if not hasattr(self, '_gcr_adapter'):
+            self._gcr_adapter = GCRAdapter()
+        return self._gcr_adapter
+
+    @gcr_adapter.setter
+    def gcr_adapter(self, adapter: GCRAdapter):
+        self._gcr_adapter = adapter
 
     def list_repos(self, repos: WildcardFilter = '*') -> pd.DataFrame:
         """Get list of repos as pandas DataFrame.
@@ -165,7 +182,7 @@ class PachydermClient:
         return df[['ts', 'job', 'pipeline', 'worker', 'user', 'message']].reset_index(drop=True)
 
     def create_pipelines(self, pipelines: WildcardFilter = '*', pipeline_specs: Optional[List[dict]] = None,
-                         recreate: bool = False) -> Tuple[List[str], List[str]]:
+                         recreate: bool = False) -> PipelineChanges:
         """Create or recreate pipelines.
 
         Args:
@@ -176,12 +193,11 @@ class PachydermClient:
         Returns:
             Created and deleted pipeline names.
         """
-        res = self._create_or_update_pipelines(pipelines=pipelines, pipeline_specs=pipeline_specs,
-                                               update=False, recreate=recreate, reprocess=False)
-        return res[1], res[2]
+        return self._create_or_update_pipelines(pipelines=pipelines, pipeline_specs=pipeline_specs,
+                                                update=False, recreate=recreate, reprocess=False)
 
     def update_pipelines(self, pipelines: WildcardFilter = '*', pipeline_specs: Optional[List[dict]] = None,
-                         recreate: bool = False, reprocess: bool = False) -> Tuple[List[str], List[str], List[str]]:
+                         recreate: bool = False, reprocess: bool = False) -> PipelineChanges:
         """Update or recreate pipelines.
 
         Non-existing pipelines will be created.
@@ -283,20 +299,17 @@ class PachydermClient:
                     raise TypeError(f'File {os.path.basename(file)} does not contain a list')
                 pipeline_specs.extend(file_content)
 
-        # Transform pipeline specs to meet the Pachyderm specification format
-        pipeline_specs = self.transform_pipeline_specs(pipeline_specs)
-
         # Filter pipelines
         if pipelines != '*':
-            pipeline_specs = [p for p in pipeline_specs if _wildcard_match(p['pipeline']['name'], pipelines)]
+            def wildcard_match_pipeline_spec(p):
+                try:
+                    return _wildcard_match(p['pipeline'] if isinstance(p['pipeline'], str) else p['pipeline']['name'])
+                except (KeyError, TypeError):
+                    return False
+            pipeline_specs = [p for p in pipeline_specs if wildcard_match_pipeline_spec(p)]
 
-        if self.update_image_digests:
-            assert isinstance(self.container_registry, ContainerRegistry), 'container_registry must be set in order to update image digests'
-            for pipeline in pipeline_specs:
-                repository, tag, digest = _split_image_string(pipeline['transform']['image'])
-                digest = self.container_registry.get_image_digest(repository, tag)
-                if digest is not None:
-                    pipeline['transform']['image'] = f'{repository}:{tag}@{digest}'
+        # Transform pipeline specs to meet the Pachyderm specification format
+        pipeline_specs = self.transform_pipeline_specs(pipeline_specs)
 
         self._cprint(f'Matched specification for {len(pipeline_specs)} pipelines', 'green' if len(pipeline_specs) > 0 else 'red')
         return pipeline_specs
@@ -316,10 +329,27 @@ class PachydermClient:
                 pipeline['pipeline'] = {'name': pipeline['pipeline']}
             if 'image' not in pipeline['transform'] and previous_image is not None:
                 pipeline['transform']['image'] = previous_image
+            if self.update_image_digests:
+                pipeline['transform']['image'] = self.update_image_digest(pipeline['transform']['image'])
             if callable(self.pipeline_spec_transformer):
                 pipeline = self.pipeline_spec_transformer(pipeline)
             previous_image = pipeline['transform']['image']
         return pipeline_specs
+
+    def update_image_digest(self, image: str) -> str:
+        repository, tag, digest = _split_image_string(image)
+
+        if re.match(r'.+\.ecr\..+\.amazonaws\.com/.+', repository):
+            registry_adapter = self.ecr_adapter
+        elif re.match(r'(^|\w+\.)gcr\.io/.+', repository):
+            registry_adapter = self.gcr_adapter
+        else:
+            registry_adapter = self.docker_registry_adapter
+
+        digest = registry_adapter.get_image_digest(repository, tag)
+        if digest is not None:
+            image = f'{repository}:{tag}@{digest}'
+        return image
 
     def clear_cache(self) -> None:
         """Clears cache of existing pipelines and image digests.
@@ -332,7 +362,7 @@ class PachydermClient:
             pass
 
     def _create_or_update_pipelines(self, pipelines: WildcardFilter = '*', pipeline_specs: List[dict] = None,
-                                    update: bool = True, recreate: bool = False, reprocess: bool = False) -> Tuple[List[str], List[str], List[str]]:
+                                    update: bool = True, recreate: bool = False, reprocess: bool = False) -> PipelineChanges:
         if pipeline_specs is None:
             pipeline_specs = self.read_pipeline_specs(pipelines)
         elif pipelines != '*':
@@ -362,7 +392,7 @@ class PachydermClient:
                 created_pipelines.append(pipeline)
 
         self._list_pipeline_names.cache_clear()
-        return updated_pipelines, created_pipelines, deleted_pipelines
+        return PipelineChanges(created=created_pipelines, updated=updated_pipelines, deleted=deleted_pipelines)
 
     @lru_cache(maxsize=None)
     def _list_pipeline_names(self, match: WildcardFilter = None) -> List[str]:

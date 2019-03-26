@@ -152,8 +152,8 @@ def test_init_env():
 def test_init():
     from pachypy.adapter import PachydermAdapter
     adapter = PachydermAdapter(host='test_host')
-    channel_target = adapter.pps_client.channel._channel.target().decode()
-    assert channel_target == 'test_host:30650'
+    assert adapter.host == 'test_host'
+    assert adapter.port == 30650
 
 
 def test_check_connectivity():

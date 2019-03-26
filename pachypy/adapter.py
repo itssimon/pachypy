@@ -69,8 +69,6 @@ class PachydermAdapter:
                 port = int(host_split[1])
             except ValueError:
                 pass
-        self.host = host
-        self.port = port
 
         kwargs = {}
         if host is not None:
@@ -79,8 +77,16 @@ class PachydermAdapter:
             kwargs['port'] = port
         self.pps_client = PpsClient(**kwargs)
         self.pfs_client = PfsClient(**kwargs)
-        self.max_retries = 2
+        self.max_retries = 1
         self._retries = 0
+
+    @property
+    def host(self) -> str:
+        return self.pps_client.channel._channel.target().decode().split(':')[0]
+
+    @property
+    def port(self) -> int:
+        return int(self.pps_client.channel._channel.target().decode().split(':')[1])
 
     def check_connectivity(self, timeout: int = 10) -> bool:
         """Checks the connectivity to pachd. Tries to connect if not currently connected.

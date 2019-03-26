@@ -109,28 +109,28 @@ def test_format_size():
 
 
 @patch_adapter()
-def test_list_repos(pretty_client, **kwargs):
+def test_list_repos(pretty_client, **mocks):
     html = pretty_client.list_repos()
     assert 'use.fontawesome.com' in html.data
     assert '<table' in html.data and html.data.count('<tr') == 7
 
 
 @patch_adapter()
-def test_list_pipelines(pretty_client, **kwargs):
+def test_list_pipelines(pretty_client, **mocks):
     html = pretty_client.list_pipelines()
     assert 'use.fontawesome.com' in html.data
     assert '<table' in html.data and html.data.count('<tr') == 6
 
 
 @patch_adapter()
-def test_list_jobs(pretty_client, **kwargs):
+def test_list_jobs(pretty_client, **mocks):
     html = pretty_client.list_jobs()
     assert 'use.fontawesome.com' in html.data
     assert '<table' in html.data and html.data.count('<tr') == 9
 
 
 @patch_adapter()
-def test_get_logs(pretty_client, capsys, **kwargs):
+def test_get_logs(pretty_client, capsys, **mocks):
     pretty_client.get_logs('test_x_pipeline_5', last_job_only=False)
     output = capsys.readouterr().out
     assert output.count('\n') == 25
