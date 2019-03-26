@@ -45,5 +45,5 @@ fi
 EXITMSG="\n${GREEN}Done testing? You can delete the Minikube cluster by running 'minikube delete'!${NC}"
 trap "echo -e \"${EXITMSG}\"; exit" SIGHUP SIGINT SIGTERM
 
-echo -e "${YELLOW}Forwarding ports... (hit CTRL-C to stop)${NC}"
+echo -e "${YELLOW}Forwarding ports... (hit Ctrl-C to stop)${NC}"
 pachctl port-forward
