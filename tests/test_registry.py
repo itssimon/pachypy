@@ -3,8 +3,8 @@ import pytest
 
 @pytest.fixture(scope='module')
 def docker_registry():
-    from pachypy.registry import DockerRegistry
-    return DockerRegistry(registry_host='index.docker.io')
+    from pachypy.registry import DockerRegistryAdapter
+    return DockerRegistryAdapter(registry_host='index.docker.io')
 
 
 def test_docker_get_image_digest(docker_registry):
@@ -22,7 +22,7 @@ def test_docker_get_image_digest_exception1(docker_registry):
 
 
 def test_docker_get_image_digest_exception2():
-    from pachypy.registry import DockerRegistry, RegistryAuthorizationException
+    from pachypy.registry import DockerRegistryAdapter, RegistryAuthorizationException
     with pytest.raises(RegistryAuthorizationException):
-        docker_registry = DockerRegistry(registry_host='index.docker.io', auth='Zm9vOmJhcg==')
+        docker_registry = DockerRegistryAdapter(registry_host='index.docker.io', auth='Zm9vOmJhcg==')
         docker_registry.get_image_digest('repository/that_doesnt_exist', 'latest')
