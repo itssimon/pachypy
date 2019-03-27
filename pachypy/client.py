@@ -50,11 +50,17 @@ class PachydermClient:
         pipeline_spec_transformer: Optional[Callable[[dict], dict]] = None,
         cprint: bool = True
     ):
+        self._pipeline_spec_files = None
+        self._docker_registry_adapter = None
+        self._ecr_adapter = None
+        self._gcr_adapter = None
+
         self.adapter = PachydermAdapter(host=host, port=port)
         self.update_image_digests = update_image_digests
         self.pipeline_spec_files = pipeline_spec_files
         self.pipeline_spec_transformer = pipeline_spec_transformer
         self.cprint = cprint
+
         self._cprint(f'Created client for Pachyderm cluster at {self.adapter.host}:{self.adapter.port}', 'green')
 
     @property
