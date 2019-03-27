@@ -62,6 +62,7 @@ def test_init_registry_adapters(client):
 
 @patch_adapter()
 def test_list_repos(client, **mocks):
+    del mocks
     df = client.list_repos()
     assert len(df) == 6
     assert df['is_tick'].sum() == 1
@@ -70,6 +71,7 @@ def test_list_repos(client, **mocks):
 
 @patch_adapter()
 def test_list_pipelines(client, **mocks):
+    del mocks
     assert len(client.list_pipelines()) == 5
     assert len(client.list_pipelines('test_x_pipeline_?')) == 5
     assert len(client.list_pipelines('test_x_pipeline_1')) == 1
@@ -77,6 +79,7 @@ def test_list_pipelines(client, **mocks):
 
 @patch_adapter()
 def test_list_jobs(client, **mocks):
+    del mocks
     df = client.list_jobs()
     assert len(df) == 8
     assert df['duration'].isna().sum() == 0
@@ -88,6 +91,7 @@ def test_list_jobs(client, **mocks):
 
 @patch_adapter()
 def test_get_logs(client, **mocks):
+    del mocks
     assert len(client.get_logs('test_x_pipeline_5')) == 10
     assert len(client.get_logs('test_x_pipeline_5', user_only=True)) == 7
     assert len(client.get_logs('test_x_pipeline_5', last_job_only=False)) == 20
@@ -119,6 +123,7 @@ def test_read_pipeline_specs(client):
 
 @patch_adapter()
 def test_create_update_delete_pipelines(client, **mocks):
+    del mocks
     list_pipeline_names = 'pachypy.adapter.PachydermAdapter.list_pipeline_names'
     pipelines = ['test_a_pipeline_1', 'test_a_pipeline_2']
     with patch(list_pipeline_names, MagicMock(return_value=[])):
@@ -131,6 +136,7 @@ def test_create_update_delete_pipelines(client, **mocks):
 
 @patch_adapter()
 def test_stop_start_pipelines(client, **mocks):
+    del mocks
     list_pipeline_names = 'pachypy.adapter.PachydermAdapter.list_pipeline_names'
     pipelines = ['test_a_pipeline_1', 'test_a_pipeline_2']
     with patch(list_pipeline_names, MagicMock(return_value=pipelines)):
