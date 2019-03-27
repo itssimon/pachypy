@@ -21,14 +21,14 @@ else
     echo -e "${GREEN}Minikube is already running${NC}"
 fi
 
-export PACHD_ADDRESS=$(minikube ip):30650
-
 if ! kubectl config current-context | grep -q "minikube"; then
     echo -e "${YELLOW}Setting kubectl context to minikube...${NC}"
     kubectl config use-context minikube
 fi
 
-if ! kubectl wait --for=condition=available --timeout=600s deployment/pachd > /dev/null; then
+export PACHD_ADDRESS=$(minikube ip):30650
+
+if ! kubectl wait --for=condition=available --timeout=600s deployment/pachd > /dev/null 2>&1; then
     echo -e "${YELLOW}Deploying Pachyderm...${NC}"
     pachctl deploy local --no-guaranteed --no-dashboard
     echo -e "${YELLOW}Waiting for Pachyderm to become available...${NC}"
