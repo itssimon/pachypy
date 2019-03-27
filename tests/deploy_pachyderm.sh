@@ -1,24 +1,18 @@
 #!/bin/bash
 
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-RED='\033[0;31m'
-NC='\033[0m'
+GREEN="\033[0;32m"
+YELLOW="\033[1;33m"
+RED="\033[0;31m"
+NC="\033[0m"
 
-if ! command -v minikube >/dev/null 2>&1; then
-    echo -e "${RED}minikube is not available. Exiting.${NC}"
-    exit
-fi
+REQUIRE=("minikube" "kubectl" "pachctl")
 
-if ! command -v kubectl >/dev/null 2>&1; then
-    echo -e "${RED}kubectl is not available. Exiting.${NC}"
-    exit
-fi
-
-if ! command -v pachctl >/dev/null 2>&1; then
-    echo -e "${RED}pachctl is not available. Exiting.${NC}"
-    exit
-fi
+for c in "${REQUIRE[@]}"; do
+    if ! command -v $c >/dev/null 2>&1; then
+        echo -e "${RED}${c} is not available. Exiting.${NC}"
+        exit
+    fi
+done
 
 if ! minikube status | grep -q "Running"; then
     echo -e "${YELLOW}Starting Minikube cluster...${NC}"
@@ -37,6 +31,7 @@ fi
 if ! kubectl wait --for=condition=available --timeout=600s deployment/pachd > /dev/null; then
     echo -e "${YELLOW}Deploying Pachyderm...${NC}"
     pachctl deploy local --no-guaranteed --no-dashboard
+    echo -e "${YELLOW}Waiting for Pachyderm to become available...${NC}"
     kubectl wait --for=condition=available --timeout=600s deployment/pachd
 else
     echo -e "${GREEN}Pachyderm is already deployed${NC}"
