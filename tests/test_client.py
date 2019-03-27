@@ -152,8 +152,9 @@ def test_split_image_string():
 
 
 def test_wildcard_filter():
-    from pachypy.client import _wildcard_filter
+    from pachypy.client import _wildcard_filter, _wildcard_match
     x = ['a', 'ab', 'b']
+    assert _wildcard_match(x, '*') is True
     assert _wildcard_filter(x, '*') == x
     assert _wildcard_filter(x, None) == x
     assert _wildcard_filter(x, 'a') == ['a']

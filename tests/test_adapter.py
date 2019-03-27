@@ -141,19 +141,13 @@ def await_job_completed_state(adapter, pipeline_name, timeout=300):
     return state
 
 
-@mock.patch.dict(os.environ, {'PACHD_ADDRESS': 'test_host:12345'})
-def test_init_env():
-    from pachypy.adapter import PachydermAdapter
-    adapter = PachydermAdapter()
-    channel_target = adapter.pps_client.channel._channel.target().decode()
-    assert channel_target == 'test_host:12345'
-
-
 def test_init():
     from pachypy.adapter import PachydermAdapter
     adapter = PachydermAdapter(host='test_host')
-    assert adapter.host == 'test_host'
-    assert adapter.port == 30650
+    assert adapter.host == 'test_host' and adapter.port == 30650
+    with mock.patch.dict(os.environ, {'PACHD_ADDRESS': 'test_host:12345'}):
+        adapter = PachydermAdapter()
+        assert adapter.host == 'test_host' and adapter.port == 12345
 
 
 def test_check_connectivity():

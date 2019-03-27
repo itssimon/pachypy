@@ -63,12 +63,9 @@ class PachydermAdapter:
             except (json.JSONDecodeError, KeyError):
                 pass
         if host is not None and port is None and ':' in host:
-            try:
-                host_split = host.split(':')
-                host = host_split[0]
-                port = int(host_split[1])
-            except ValueError:
-                pass
+            host_split = host.split(':')
+            host = host_split[0]
+            port = int(host_split[1])
 
         kwargs = {}
         if host is not None:
