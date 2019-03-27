@@ -8,34 +8,26 @@ Please submit an issue on GitHub and I will be happy to help out.
 
 Pull requests for bugfixes and new features are always welcome! Please also add tests for any new functionality.
 
+## Prerequisites for testing
+
+In order to run the full suite of tests, a running Pachyderm instance is required. A shell script is provided that automates the process of setting things up locally:
+
+- Uses a Kubernetes on Docker Desktop cluster or Minikube and sets the `kubectl` context accordingly
+- If using Minikube, starts a Minikube cluster if not currently running
+- Deploys Pachyderm using `pachctl deploy local` if not already deployed and waits for the deployment to complete
+- Forwards Pachyderm ports using `pachctl port-forward`
+- Provides teardown instructions
+
+```bash
+helper/deploy_pachyderm.sh
+```
+
+The script requires `kubectl`, `pachctl` and `minikube` (if not using Kubernetes on Docker Desktop) to be available.
+
 ## Run tests
-
-In order to run the full suite of tests, a running Pachyderm instance is required. A shell script is provided which starts a local Minikube cluster, deploys Pachyderm on it and forwards ports.
-
-```bash
-. tests/deploy_pachyderm.sh
-```
-
-The script requires `minkube`, `kubectl` and `pachctl` to be available.
-
-You can install these requiresments on macOS via `brew`:
-
-```bash
-brew cask install virtualbox minikube
-brew install kubernetes-cli
-brew tap pachyderm/tap && brew install pachyderm/tap/pachctl@1.8
-```
-
-To run tests do:
 
 ```bash
 make test
 ```
 
 If Pachyderm is not currently available, the tests relying on it will be skipped automatically.
-
-The Minikube cluster can subsequently be deleted by running:
-
-```bash
-minikube delete
-```
