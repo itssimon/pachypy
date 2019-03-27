@@ -16,6 +16,7 @@ def test_docker_load_auth_from_file(docker_registry):
     config_data = json.dumps({'auths': {docker_registry.registry_url: {'auth': auth1}}})
     config_data_cred_store = json.dumps({'auths': {}, 'credsStore': 'test'})
     cred_store_data = json.dumps({'Username': 'username2', 'Secret': 'password2'})
+    assert docker_registry.load_auth_from_file('file_that_doesnt_exist.json') is None
     with patch('pachypy.registry.open', mock_open(read_data=config_data), create=True):
         assert docker_registry.load_auth_from_file() == auth1
     with patch('pachypy.registry.open', mock_open(read_data=config_data_cred_store), create=True):
@@ -23,6 +24,8 @@ def test_docker_load_auth_from_file(docker_registry):
             popen_mock.return_value = Mock()
             popen_mock.return_value.configure_mock(**{'communicate.return_value': (cred_store_data, '')})
             assert docker_registry.load_auth_from_file() == auth2
+            popen_mock.return_value.configure_mock(**{'communicate.return_value': ('', '')})
+            assert docker_registry.load_auth_from_file() is None
 
 
 def test_docker_load_auth_cred_store(docker_registry):
