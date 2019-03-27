@@ -357,7 +357,7 @@ class PachydermAdapter:
         self.pfs_client.create_repo(repo, description=description)
 
     @retry
-    def delete_repo(self, repo: str, description: Optional[str] = None) -> None:
+    def delete_repo(self, repo: str) -> None:
         """Delete repository.
 
         Args:
