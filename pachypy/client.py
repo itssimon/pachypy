@@ -303,7 +303,7 @@ class PachydermClient:
         if pipelines != '*':
             def wildcard_match_pipeline_spec(p):
                 try:
-                    return _wildcard_match(p['pipeline'] if isinstance(p['pipeline'], str) else p['pipeline']['name'])
+                    return _wildcard_match(p['pipeline'] if isinstance(p['pipeline'], str) else p['pipeline']['name'], pipelines)
                 except (KeyError, TypeError):
                     return False
             pipeline_specs = [p for p in pipeline_specs if wildcard_match_pipeline_spec(p)]
