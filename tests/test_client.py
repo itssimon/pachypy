@@ -5,10 +5,10 @@ import pandas as pd
 from unittest.mock import patch, MagicMock, DEFAULT
 
 
-def get_mock_from_csv(file, datetime_cols=[], timedelta_cols=[], json_cols=[]):
+def get_mock_from_csv(file, datetime_cols=None, timedelta_cols=None, json_cols=None):
     file_path = os.path.join(os.path.dirname(__file__), 'mock', file)
-    df = pd.read_csv(file_path, parse_dates=datetime_cols, converters={c: json.loads for c in json_cols})
-    for c in timedelta_cols:
+    df = pd.read_csv(file_path, parse_dates=datetime_cols, converters={c: json.loads for c in json_cols or []})
+    for c in timedelta_cols or []:
         df[c] = pd.to_timedelta(df[c])
     return df
 
