@@ -3,8 +3,7 @@ install:
 
 test:
 	pytest --cov-report term --cov-report xml --cov=pachypy/ -vv tests/
-	rm -f coverage.svg
-	coverage-badge -o coverage.svg
+	bash helper/upload_codecov.sh
 
 build-docs:
 	$(MAKE) -C docs/ html
