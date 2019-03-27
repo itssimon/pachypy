@@ -4,7 +4,7 @@
 [![Documentation Status](https://readthedocs.org/projects/pachypy/badge/?version=latest)](https://pachypy.readthedocs.io/en/latest/?badge=latest)
 [![Coverage Status](https://raw.githubusercontent.com/itssimon/pachypy/master/coverage.svg?sanitize=true)](#)
 [![Requirements Status](https://requires.io/github/itssimon/pachypy/requirements.svg?branch=master)](https://requires.io/github/itssimon/pachypy/requirements/?branch=master)
-[![Codacy Badge](https://api.codacy.com/project/badge/Grade/889241976fca40a18591be7db43698fe)](https://app.codacy.com/app/itssimon/pachypy)
+[![Codacy Badge](https://img.shields.io/codacy/grade/889241976fca40a18591be7db43698fe.svg)](https://app.codacy.com/app/itssimon/pachypy)
 [![Stability Alpha](https://img.shields.io/badge/stability-alpha-yellow.svg)](#)
 
 This package aims to make interactions with a [Pachyderm](https://github.com/pachyderm/pachyderm) cluster more efficient and user-friendly.
