@@ -10,20 +10,20 @@ Pull requests for bugfixes and new features are always welcome! Please also add 
 
 ## Run tests
 
-In order to run the full suite of tests, a running Pachyderm instance is required. The easiest way to achieve that is to deploy it on a local Minikube cluster using `pachctl`.
-
-Example: To install `minikube` and `pachctl` on macOS via `brew` run:
-
-```bash
-brew cask install virtualbox minikube
-brew tap pachyderm/tap && brew install pachyderm/tap/pachctl@1.8
-```
-
-A script is provided to start a local Minikube cluster and deploy Pachyderm on it. You also need to forward ports so that tests can connect to it.
+In order to run the full suite of tests, a running Pachyderm instance is required. A shell script is provided which starts a local Minikube cluster, deploys Pachyderm on it and forwards ports.
 
 ```bash
 . tests/deploy_pachyderm.sh
-pachctl port-forward
+```
+
+The script requires `minkube`, `kubectl` and `pachctl` to be available.
+
+You can install these requiresments on macOS via `brew`:
+
+```bash
+brew cask install virtualbox minikube
+brew install kubernetes-cli
+brew tap pachyderm/tap && brew install pachyderm/tap/pachctl@1.8
 ```
 
 To run tests do:
