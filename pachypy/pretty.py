@@ -237,7 +237,7 @@ def _format_datetime(d: datetime) -> str:
 def _format_date(d: date) -> str:
     td = (datetime.now().date() - d).days
     word = {-1: 'Tomorrow', 0: 'Today', 1: 'Yesterday'}
-    return (word[td] if td in word else '{:%-d %b %Y}'.format(d))
+    return word[td] if td in word else '{:%-d %b %Y}'.format(d)
 
 
 def _format_duration(secs: float) -> str:

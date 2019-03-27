@@ -1,9 +1,9 @@
 #!/bin/bash
 
-GREEN="\\033[0;32m"
-YELLOW="\\033[1;33m"
-RED="\\033[0;31m"
-NC="\\033[0m"
+GREEN="\033[0;32m"
+YELLOW="\033[1;33m"
+RED="\033[0;31m"
+NC="\033[0m"
 
 REQUIRE=("minikube" "kubectl" "pachctl")
 
@@ -38,7 +38,7 @@ else
     echo -e "${GREEN}Pachyderm is already deployed${NC}"
 fi
 
-EXITMSG="\\n${GREEN}Done testing? You can delete the Minikube cluster by running 'minikube delete'!${NC}"
+EXITMSG="\n${GREEN}Done testing? You can delete the Minikube cluster by running 'minikube delete'!${NC}"
 trap 'echo -e "${EXITMSG}"; exit' SIGHUP SIGINT SIGTERM
 
 echo -e "${YELLOW}Forwarding ports... (hit Ctrl-C to stop)${NC}"
