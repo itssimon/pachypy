@@ -3,9 +3,10 @@ __all__ = [
 ]
 
 import os
+import re
 import json
-import base64
 import subprocess
+from base64 import b64encode
 from functools import lru_cache
 from typing import Optional
 
@@ -54,6 +55,10 @@ class DockerRegistryAdapter(ContainerRegistryAdapter):
         if self.auth is None:
             self.auth = self.load_auth_from_file()
 
+    @property
+    def registry_url(self):
+        return 'https://' + self.registry_host + '/v1/'
+
     @lru_cache()
     def get_image_digest(self, repository: str, tag: str) -> str:
         from dxf import DXF
@@ -72,28 +77,34 @@ class DockerRegistryAdapter(ContainerRegistryAdapter):
             raise RegistryImageNotFoundException(f'Image {repository}:{tag} not found in registry {self.registry_host}')
 
     def load_auth_from_file(self, file: str = '~/.docker/config.json') -> str:
-        hub_index = 'https://' + self.registry_host + '/v1/'
         try:
             with open(os.path.expanduser(file)) as f:
                 data = json.load(f)
+                print(data)
         except (FileNotFoundError, json.JSONDecodeError):
             return None
-        if 'credsStore' in data:
-            try:
-                cmd = 'docker-credential-' + data['credsStore']
-                p = subprocess.Popen([cmd, 'get'], stdout=subprocess.PIPE, stdin=subprocess.PIPE, stderr=subprocess.STDOUT)
-                out = p.communicate(input=hub_index.encode())[0]
-            except FileNotFoundError:
-                raise RuntimeError(f'Could not retrieve Docker credentials from credentials store. Executable file "{cmd}" not found in $PATH.')
-            try:
-                credentials = json.loads(out)
-                username = credentials['Username']
-                password = credentials['Secret']
-                return base64.b64encode(f'{username}:{password}')
-            except (json.JSONDecodeError, KeyError, TypeError):
-                return None
+        auth = data.get('auths', {}).get(self.registry_url, {}).get('auth', None)
+        if auth is None and 'credsStore' in data:
+            return self.load_auth_from_cred_store(data['credsStore'])
+        return auth
+
+    def load_auth_from_cred_store(self, cred_store: str) -> str:
+        if not re.match(r'^[\w\d\-_]+$', cred_store):
+            raise ValueError(f'{cred_store} is not a valid credentials store.')
+        try:
+            cmd = 'docker-credential-' + cred_store
+            p = subprocess.Popen([cmd, 'get'], stdout=subprocess.PIPE, stdin=subprocess.PIPE, stderr=subprocess.STDOUT)
+            out = p.communicate(input=self.registry_url.encode())[0]
+        except FileNotFoundError:
+            raise RuntimeError(f'Could not retrieve Docker credentials from credentials store "{cred_store}". Executable file "{cmd}" not found in $PATH.')
+        try:
+            credentials = json.loads(out)
+            username = credentials['Username']
+            password = credentials['Secret']
+        except (json.JSONDecodeError, KeyError, TypeError):
+            return None
         else:
-            return data.get('auths', {}).get(hub_index, {}).get('auth', None)
+            return b64encode(f'{username}:{password}'.encode()).decode('utf-8')
 
 
 class AmazonECRAdapter(ContainerRegistryAdapter):
