@@ -19,7 +19,6 @@ if kubectl config get-contexts | grep -q "docker-for-desktop"; then
     CONTEXT="docker-for-desktop"
     echo -e "${BLUE}Using Kubernetes on Docker for Desktop...${NC}"
 
-    PACHD_ADDRESS="localhost:30650"
     EXITMSG="\n${GREEN}Done testing? You can reset the local Kubernetes cluster in the Docker Desktop preferences under Reset > Reset Kubernetes cluster!${NC}"
 else
     CONTEXT="minikube"
@@ -35,7 +34,6 @@ else
         minikube start
     fi
 
-    PACHD_ADDRESS="$(minikube ip):30650"
     EXITMSG="\n${GREEN}Done testing? You can delete the Minikube cluster by running 'minikube delete'!${NC}"
 fi
 
