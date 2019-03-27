@@ -78,7 +78,7 @@ class PachydermClient:
 
     @property
     def docker_registry_adapter(self):
-        if not hasattr(self, '_docker_registry_adapter'):
+        if self._docker_registry_adapter is None:
             self._docker_registry_adapter = DockerRegistryAdapter()
         return self._docker_registry_adapter
 
@@ -88,7 +88,7 @@ class PachydermClient:
 
     @property
     def ecr_adapter(self):
-        if not hasattr(self, '_ecr_adapter'):
+        if self._ecr_adapter is None:
             self._ecr_adapter = AmazonECRAdapter()
         return self._ecr_adapter
 
@@ -98,7 +98,7 @@ class PachydermClient:
 
     @property
     def gcr_adapter(self):
-        if not hasattr(self, '_gcr_adapter'):
+        if self._gcr_adapter is None:
             self._gcr_adapter = GCRAdapter()
         return self._gcr_adapter
 
