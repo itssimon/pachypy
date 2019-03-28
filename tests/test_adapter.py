@@ -252,10 +252,13 @@ def test_create_commit_delete_repo(adapter):
 
     adapter.create_repo(repo_name)
     assert repo_name in set(adapter.list_repos().repo)
+    assert adapter.get_last_commit(repo_name) is None
+    assert len(adapter.list_files(repo_name)) == 0
 
-    adapter.commit_timestamp_file(repo_name)
-    commits = adapter.list_commits(repo_name)
-    assert len(commits) == 1
+    for _ in range(3):
+        adapter.commit_timestamp_file(repo_name)
+    commits = adapter.list_commits(repo_name, n=2)
+    assert len(commits) == 2
     assert commits['repo'].iloc[0] == repo_name
     assert commits['size_bytes'].iloc[0] == 26
 
