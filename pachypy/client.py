@@ -17,7 +17,7 @@ import pandas as pd
 from tzlocal import get_localzone
 from termcolor import cprint
 
-from .adapter import PachydermAdapter
+from .adapter import PachydermAdapter, PachydermException
 from .registry import DockerRegistryAdapter, AmazonECRAdapter, GCRAdapter
 
 
@@ -26,8 +26,10 @@ FileGlob = Optional[Union[str, Path, Iterable[str], Iterable[Path]]]
 PipelineChanges = namedtuple('PipelineChanges', ['created', 'updated', 'deleted'])
 
 
-class PachydermClientException(Exception):
-    pass
+class PachydermClientException(PachydermException):
+
+    def __init__(self, message):
+        super().__init__(message)
 
 
 class PachydermClient:
@@ -118,7 +120,7 @@ class PachydermClient:
         """
         df = self.adapter.list_repos()
         if repos is not None and repos != '*':
-            df = df[df.repo.isin(_wildcard_filter(df.repo, repos))]
+            df = df[df.repo.isin(set(_wildcard_filter(df.repo, repos)))]
         df['is_tick'] = df['repo'].str.endswith('_tick')
         df['created'] = _tz_localize(df['created'])
         return df.set_index('repo')[['is_tick', 'branches', 'size_bytes', 'created']].sort_index()
@@ -136,6 +138,26 @@ class PachydermClient:
         df = pd.concat([self.adapter.list_commits(repo=repo, n=n) for repo in repo_names])
         return df.set_index(['repo', 'commit'])[['size_bytes', 'started', 'finished', 'parent_commit']]
 
+    def list_files(self, repos: WildcardFilter, commit: str = None, glob: str = '**', files_only: bool = True) -> pd.DataFrame:
+        """Get list of files as pandas DataFrame.
+
+        Args:
+            repos: Name pattern to filter repos to return files for. Supports shell-style wildcards.
+            commit: Commit ID to return files for. Uses the latest commit per repo if not specified.
+                If specified, the repos parameter must only match the repo this commit ID belongs to.
+            glob: Glob pattern to filter files returned.
+            files_only: Whether to return only files or include directories.
+        """
+        repo_names = self._list_repo_names(repos)
+        if len(repo_names) == 0:
+            raise PachydermClientException(f'No repos matching "{repos}" were found. Try clear_cache()?')
+        if commit is not None and len(repo_names) > 1:
+            raise PachydermClientException(f'More than one repo matches "{repos}", but it must only match the repo of commit ID "{commit}".')
+        df = pd.concat([self.adapter.list_files(repo=repo, commit=commit, glob=glob) for repo in repo_names])
+        if files_only:
+            df = df[df['type'] == 'file']
+        return df.set_index(['repo', 'path'])[['type', 'size_bytes', 'commit', 'committed']]
+
     def list_pipelines(self, pipelines: WildcardFilter = '*') -> pd.DataFrame:
         """Get list of pipelines as pandas DataFrame.
 
@@ -144,7 +166,7 @@ class PachydermClient:
         """
         df = self.adapter.list_pipelines()
         if pipelines is not None and pipelines != '*':
-            df = df[df.pipeline.isin(_wildcard_filter(df.pipeline, pipelines))]
+            df = df[df.pipeline.isin(set(_wildcard_filter(df.pipeline, pipelines)))]
         df['created'] = _tz_localize(df['created'])
         return df.set_index('pipeline')[[
             'state', 'cron_spec', 'input', 'input_repos', 'output_branch',
@@ -178,6 +200,15 @@ class PachydermClient:
             'download_time', 'process_time', 'upload_time',
             'download_bytes', 'upload_bytes', 'output_commit',
         ]]
+
+    def list_datums(self, job: str) -> pd.DataFrame:
+        """Get list of datums for a job as pandas DataFrame.
+
+        Args:
+            job: Job ID to return datums for.
+        """
+        df = self.adapter.list_datums(job)
+        return df.set_index('datum')[['job', 'state', 'repo', 'path', 'type', 'size_bytes', 'commit', 'committed']].sort_index()
 
     def get_logs(self, pipelines: WildcardFilter = '*', last_job_only: bool = True, user_only: bool = False) -> pd.DataFrame:
         """Get logs for jobs.

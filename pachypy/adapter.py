@@ -28,10 +28,13 @@ from python_pachyderm.pfs_client import (
 
 class PachydermException(Exception):
 
-    def __init__(self, details: str, code):
-        super().__init__(details)
-        self.status_code = code.value[0]
-        self.status = code.value[1]
+    def __init__(self, message: str, code: object = None):
+        super().__init__(message)
+        try:
+            self.status_code = code.value[0]
+            self.status = code.value[1]
+        except (AttributeError, KeyError):
+            pass
 
 
 def retry(f: Callable):
@@ -173,13 +176,13 @@ class PachydermAdapter:
             return None
 
     @retry
-    def list_files(self, repo: str, commit: str = None, pattern: str = '**') -> pd.DataFrame:
+    def list_files(self, repo: str, commit: str = None, glob: str = '**') -> pd.DataFrame:
         """Returns list of files.
 
         Args:
             repo: Name of repo to list files from.
             commit: Commit ID to list files from.
-            pattern: Glob pattern to filter files returned.
+            glob: Glob pattern to filter files returned.
         """
         file_type_mapping = {
             RESERVED: 'reserved',
@@ -191,7 +194,7 @@ class PachydermAdapter:
             commit = self.get_last_commit(repo)
         if commit is not None:
             commit = Commit(repo=Repo(name=repo), id=commit)
-            for file in self.pfs_client.stub.GlobFileStream(GlobFileRequest(commit=commit, pattern=pattern)):
+            for file in self.pfs_client.stub.GlobFileStream(GlobFileRequest(commit=commit, pattern=glob)):
                 res.append({
                     'repo': file.file.commit.repo.name,
                     'commit': file.file.commit.id,
@@ -380,7 +383,7 @@ class PachydermAdapter:
                     'size_bytes': data.size_bytes,
                     'committed': _to_timestamp(data.committed.seconds, data.committed.nanos),
                 })
-        return pd.DataFrame(res, columns=['job', 'datum', 'state', 'repo', 'commit', 'path', 'type', 'size_bytes', 'committed']) \
+        return pd.DataFrame(res, columns=['job', 'datum', 'state', 'repo', 'path', 'type', 'size_bytes', 'commit', 'committed']) \
             .astype({'size_bytes': 'int', 'committed': 'datetime64[ns]'})
 
     @retry
