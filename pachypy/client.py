@@ -26,6 +26,10 @@ FileGlob = Optional[Union[str, Path, Iterable[str], Iterable[Path]]]
 PipelineChanges = namedtuple('PipelineChanges', ['created', 'updated', 'deleted'])
 
 
+class PachydermClientException(Exception):
+    pass
+
+
 class PachydermClient:
 
     """Pachyderm client aiming to make interaction with a Pachyderm cluster more efficient and user-friendly.
@@ -119,6 +123,19 @@ class PachydermClient:
         df['created'] = _tz_localize(df['created'])
         return df.set_index('repo')[['is_tick', 'branches', 'size_bytes', 'created']].sort_index()
 
+    def list_commits(self, repos: WildcardFilter, n: int = 10) -> pd.DataFrame:
+        """Get list of commits as pandas DataFrame.
+
+        Args:
+            repos: Name pattern to filter repos to return commits for. Supports shell-style wildcards.
+            n: Maximum number of commits returned per repo.
+        """
+        repo_names = self._list_repo_names(repos)
+        if len(repo_names) == 0:
+            raise PachydermClientException(f'No repos matching "{repos}" were found. Try clear_cache()?')
+        df = pd.concat([self.adapter.list_commits(repo=repo, n=n) for repo in repo_names])
+        return df.set_index(['repo', 'commit'])[['size_bytes', 'started', 'finished', 'parent_commit']]
+
     def list_pipelines(self, pipelines: WildcardFilter = '*') -> pd.DataFrame:
         """Get list of pipelines as pandas DataFrame.
 
@@ -144,7 +161,8 @@ class PachydermClient:
         """
         if pipelines is not None and pipelines != '*':
             pipeline_names = self._list_pipeline_names(pipelines)
-            assert len(pipeline_names) > 0, f'No pipelines matching "{pipelines}" were found. Try clear_cache()?'
+            if len(pipeline_names) == 0:
+                raise PachydermClientException(f'No pipelines matching "{pipelines}" were found. Try clear_cache()?')
             df = pd.concat([self.adapter.list_jobs(pipeline=pipeline, n=n) for pipeline in pipeline_names])
         else:
             df = self.adapter.list_jobs(n=n)
