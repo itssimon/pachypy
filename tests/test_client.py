@@ -31,6 +31,8 @@ def patch_adapter():
         list_pipeline_names=lambda _: get_mock_from_csv('list_pipelines.csv')['pipeline'].tolist(),
         list_jobs=mock_list_jobs,
         get_logs=mock_get_logs,
+        create_repo=DEFAULT,
+        delete_repo=DEFAULT,
         create_pipeline=DEFAULT,
         update_pipeline=DEFAULT,
         delete_pipeline=DEFAULT,
@@ -96,6 +98,22 @@ def test_get_logs(client, **mocks):
     assert len(client.get_logs('test_x_pipeline_5', user_only=True)) == 7
     assert len(client.get_logs('test_x_pipeline_5', last_job_only=False)) == 20
     assert len(client.get_logs('test_x_pipeline_5', user_only=True, last_job_only=False)) == 14
+
+
+@patch_adapter()
+def test_create_delete_repos(client, **mocks):
+    del mocks
+    list_repo_names = 'pachypy.adapter.PachydermAdapter.list_repo_names'
+    repos = ['test_repo_1', 'test_repo_2']
+    with patch(list_repo_names, MagicMock(return_value=[])):
+        assert client.create_repos(repos) == repos
+        assert client.delete_repos('test_repo_*') == []
+    with patch(list_repo_names, MagicMock(return_value=repos[1:])):
+        assert client.create_repos(repos) == repos[:1]
+        assert client.delete_repos('test_repo_*') == repos[1:]
+    with patch(list_repo_names, MagicMock(return_value=repos)):
+        assert client.create_repos(repos) == []
+        assert client.delete_repos('test_repo_*') == repos
 
 
 def test_pipeline_spec_files(client, pipeline_spec_files_path):
