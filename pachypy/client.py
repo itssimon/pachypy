@@ -8,7 +8,6 @@ import yaml
 from glob import glob
 from pathlib import Path
 from fnmatch import fnmatch
-from functools import lru_cache
 from datetime import datetime
 from collections import namedtuple
 from typing import List, Tuple, Set, Iterable, Callable, Union, Optional
@@ -489,13 +488,11 @@ class PachydermClient:
         self._list_repo_names.cache_clear()
         return PipelineChanges(created=created_pipelines, updated=updated_pipelines, deleted=deleted_pipelines)
 
-    @lru_cache(maxsize=None)
     def _list_pipeline_names(self, match: WildcardFilter = None) -> List[str]:
-        return self.adapter.list_pipeline_names() if match is None else _wildcard_filter(self._list_pipeline_names(), match)
+        return _wildcard_filter(self.adapter.list_pipeline_names(), match)
 
-    @lru_cache(maxsize=None)
     def _list_repo_names(self, match: WildcardFilter = None) -> List[str]:
-        return self.adapter.list_repo_names() if match is None else _wildcard_filter(self._list_repo_names(), match)
+        return _wildcard_filter(self.adapter.list_repo_names(), match)
 
     def _cprint(self, text, color=None, on_color=None):
         if self.cprint:
