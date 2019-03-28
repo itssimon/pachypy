@@ -187,6 +187,45 @@ class PachydermClient:
         df = df.sort_values(['worker_ts_min', 'job', 'worker', 'ts', 'index'], ascending=True)
         return df[['ts', 'job', 'pipeline', 'worker', 'user', 'message']].reset_index(drop=True)
 
+    def create_repos(self, repos: Union[str, Iterable[str]]) -> List[str]:
+        """Create one or multiple new repositories in pfs.
+
+        Args:
+            repos: Name of new repository or iterable of names.
+
+        Returns:
+            Created repos.
+        """
+        if isinstance(repos, str):
+            repos = [repos]
+        existing_repos = set(self._list_repo_names())
+        created_repos = []
+        for repo in repos:
+            if repo not in existing_repos:
+                self._cprint(f'Creating repo {repo}', 'yellow')
+                self.adapter.create_repo(repo=repo)
+                created_repos.append(repo)
+            else:
+                self._cprint(f'Repo {repo} already exists', 'red')
+        self._list_repo_names.cache_clear()
+        return created_repos
+
+    def delete_repos(self, repos: WildcardFilter) -> List[str]:
+        """Delete repositories.
+
+        Args:
+            repos: Pattern to filter repos to delete. Supports shell-style wildcards.
+
+        Returns:
+            Deleted repos.
+        """
+        repos = self._list_repo_names(repos)
+        for repo in repos:
+            self._cprint(f'Deleting repo {repo}', 'yellow')
+            self.adapter.delete_repo(repo)
+        self._list_repo_names.cache_clear()
+        return repos
+
     def create_pipelines(self, pipelines: WildcardFilter = '*', pipeline_specs: Optional[List[dict]] = None,
                          recreate: bool = False) -> PipelineChanges:
         """Create or recreate pipelines.
@@ -229,7 +268,7 @@ class PachydermClient:
         Returns:
             Names of deleted pipelines.
         """
-        pipelines = pipelines if isinstance(pipelines, list) else self._list_pipeline_names(pipelines)
+        pipelines = self._list_pipeline_names(pipelines)
         for pipeline in pipelines[::-1]:
             self._cprint(f'Deleting pipeline {pipeline}', 'yellow')
             self.adapter.delete_pipeline(pipeline)
@@ -245,7 +284,7 @@ class PachydermClient:
         Returns:
             Names of started pipelines.
         """
-        pipelines = pipelines if isinstance(pipelines, list) else self._list_pipeline_names(pipelines)
+        pipelines = self._list_pipeline_names(pipelines)
         for pipeline in pipelines:
             self._cprint(f'Starting pipeline {pipeline}', 'yellow')
             self.adapter.start_pipeline(pipeline)
@@ -260,7 +299,7 @@ class PachydermClient:
         Returns:
             Names of stopped pipelines.
         """
-        pipelines = pipelines if isinstance(pipelines, list) else self._list_pipeline_names(pipelines)
+        pipelines = self._list_pipeline_names(pipelines)
         for pipeline in pipelines:
             self._cprint(f'Stopping pipeline {pipeline}', 'yellow')
             self.adapter.stop_pipeline(pipeline)
@@ -391,18 +430,23 @@ class PachydermClient:
                     self.adapter.update_pipeline(pipeline_specs, reprocess=reprocess)
                     updated_pipelines.append(pipeline)
                 else:
-                    self._cprint(f'Pipeline {pipeline} already exists', 'yellow')
+                    self._cprint(f'Pipeline {pipeline} already exists', 'red')
             else:
                 self._cprint(f'Creating pipeline {pipeline}', 'yellow')
                 self.adapter.create_pipeline(pipeline_specs)
                 created_pipelines.append(pipeline)
 
         self._list_pipeline_names.cache_clear()
+        self._list_repo_names.cache_clear()
         return PipelineChanges(created=created_pipelines, updated=updated_pipelines, deleted=deleted_pipelines)
 
     @lru_cache(maxsize=None)
     def _list_pipeline_names(self, match: WildcardFilter = None) -> List[str]:
         return self.adapter.list_pipeline_names() if match is None else _wildcard_filter(self._list_pipeline_names(), match)
+
+    @lru_cache(maxsize=None)
+    def _list_repo_names(self, match: WildcardFilter = None) -> List[str]:
+        return self.adapter.list_repo_names() if match is None else _wildcard_filter(self._list_repo_names(), match)
 
     def _cprint(self, text, color=None, on_color=None):
         if self.cprint:

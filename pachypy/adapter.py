@@ -132,6 +132,10 @@ class PachydermAdapter:
             .astype({'size_bytes': 'int', 'created': 'datetime64[ns]'})
 
     @retry
+    def list_repo_names(self) -> List[str]:
+        return [r.repo.name for r in self.pfs_client.list_repo()]
+
+    @retry
     def list_commits(self, repo: str, n: int = 20) -> pd.DataFrame:
         """Returns list of commits.
 
