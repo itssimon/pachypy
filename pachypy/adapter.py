@@ -8,12 +8,21 @@ import pandas as pd
 from grpc._channel import _Rendezvous
 from python_pachyderm import PpsClient, PfsClient
 from python_pachyderm.client.pps.pps_pb2 import (
-    Pipeline, ListJobRequest,
+    Pipeline, Job,
+    ListJobRequest, ListDatumRequest,
     CreatePipelineRequest, DeletePipelineRequest, StartPipelineRequest, StopPipelineRequest
 )
+from python_pachyderm.client.pfs.pfs_pb2 import (
+    Repo, Commit,
+    GlobFileRequest, ListCommitRequest
+)
 from python_pachyderm.pps_client import (
+    FAILED, SUCCESS, SKIPPED, STARTING,
     JOB_STARTING, JOB_RUNNING, JOB_FAILURE, JOB_SUCCESS, JOB_KILLED,
     PIPELINE_STARTING, PIPELINE_RUNNING, PIPELINE_RESTARTING, PIPELINE_FAILURE, PIPELINE_PAUSED, PIPELINE_STANDBY
+)
+from python_pachyderm.pfs_client import (
+    RESERVED, FILE, DIR
 )
 
 
@@ -121,6 +130,74 @@ class PachydermAdapter:
             })
         return pd.DataFrame(res, columns=['repo', 'size_bytes', 'branches', 'created']) \
             .astype({'size_bytes': 'int', 'created': 'datetime64[ns]'})
+
+    @retry
+    def list_commits(self, repo: str, n: int = 20) -> pd.DataFrame:
+        """Returns list of commits.
+
+        Args:
+            repo: Name of repo to list commits for.
+        """
+        i = 1
+        res = []
+        for commit in self.pfs_client.stub.ListCommitStream(ListCommitRequest(repo=Repo(name=repo))):
+            res.append({
+                'commit': commit.commit.id,
+                'parent_commit': commit.parent_commit.id,
+                'repo': commit.commit.repo.name,
+                'size_bytes': commit.size_bytes,
+                'started': _to_timestamp(commit.started.seconds, commit.started.nanos),
+                'finished': _to_timestamp(commit.finished.seconds, commit.finished.nanos),
+            })
+            i += 1
+            if n is not None and i > n:
+                break
+        return pd.DataFrame(res, columns=['repo', 'commit', 'size_bytes', 'started', 'finished', 'parent_commit']) \
+            .astype({'size_bytes': 'int', 'started': 'datetime64[ns]', 'finished': 'datetime64[ns]'})
+
+    @retry
+    def get_last_commit(self, repo: str) -> Optional[str]:
+        """Returns the ID of the last commit to a repo.
+
+        Args:
+            repo: Repo to get commit ID for.
+        """
+        try:
+            commit = next(self.pfs_client.stub.ListCommitStream(ListCommitRequest(repo=Repo(name=repo))))
+            return commit.commit.id
+        except StopIteration:
+            return None
+
+    @retry
+    def list_files(self, repo: str, commit: str = None, pattern: str = '**') -> pd.DataFrame:
+        """Returns list of files.
+
+        Args:
+            repo: Name of repo to list files from.
+            commit: Commit ID to list files from.
+            pattern: Glob pattern to filter files returned.
+        """
+        file_type_mapping = {
+            RESERVED: 'reserved',
+            FILE: 'file',
+            DIR: 'dir',
+        }
+        res = []
+        if commit is None:
+            commit = self.get_last_commit(repo)
+        if commit is not None:
+            commit = Commit(repo=Repo(name=repo), id=commit)
+            for file in self.pfs_client.stub.GlobFileStream(GlobFileRequest(commit=commit, pattern=pattern)):
+                res.append({
+                    'repo': file.file.commit.repo.name,
+                    'commit': file.file.commit.id,
+                    'path': file.file.path,
+                    'type': file_type_mapping.get(file.file_type, 'unknown'),
+                    'size_bytes': file.size_bytes,
+                    'committed': _to_timestamp(file.committed.seconds, file.committed.nanos),
+                })
+        return pd.DataFrame(res, columns=['repo', 'commit', 'path', 'type', 'size_bytes', 'committed']) \
+            .astype({'size_bytes': 'int', 'committed': 'datetime64[ns]'})
 
     @retry
     def list_pipelines(self) -> pd.DataFrame:
@@ -266,6 +343,41 @@ class PachydermAdapter:
             'download_bytes': 'float',
             'upload_bytes': 'float',
         })
+
+    @retry
+    def list_datums(self, job: str) -> pd.DataFrame:
+        """Returns a list of datums and files for a given job.
+
+        Args:
+            job: Job ID to list datums for.
+        """
+        state_mapping = {
+            FAILED: 'failed',
+            SUCCESS: 'success',
+            SKIPPED: 'skipped',
+            STARTING: 'starting',
+        }
+        file_type_mapping = {
+            RESERVED: 'reserved',
+            FILE: 'file',
+            DIR: 'dir',
+        }
+        res = []
+        for datum in self.pps_client.stub.ListDatumStream(ListDatumRequest(job=Job(id=job))):
+            for data in datum.datum_info.data:
+                res.append({
+                    'job': datum.datum_info.datum.job.id,
+                    'datum': datum.datum_info.datum.id,
+                    'state': state_mapping.get(datum.datum_info.state, 'unknown'),
+                    'repo': data.file.commit.repo.name,
+                    'commit': data.file.commit.id,
+                    'path': data.file.path,
+                    'type': file_type_mapping.get(data.file_type, 'unknown'),
+                    'size_bytes': data.size_bytes,
+                    'committed': _to_timestamp(data.committed.seconds, data.committed.nanos),
+                })
+        return pd.DataFrame(res, columns=['job', 'datum', 'state', 'repo', 'commit', 'path', 'type', 'size_bytes', 'committed']) \
+            .astype({'size_bytes': 'int', 'committed': 'datetime64[ns]'})
 
     @retry
     def get_logs(self, pipeline: Optional[str] = None, job: Optional[str] = None, master: bool = False) -> pd.DataFrame:

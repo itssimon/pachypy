@@ -254,10 +254,16 @@ def test_create_commit_delete_repo(adapter):
     assert repo_name in set(adapter.list_repos().repo)
 
     adapter.commit_timestamp_file(repo_name)
-    commits = adapter.pfs_client.list_commit(repo_name)
+    commits = adapter.list_commits(repo_name)
     assert len(commits) == 1
-    assert commits[0].commit.repo.name == repo_name
-    assert commits[0].size_bytes == 26
+    assert commits['repo'].iloc[0] == repo_name
+    assert commits['size_bytes'].iloc[0] == 26
+
+    files = adapter.list_files(repo_name)
+    assert len(files) == 1
+    assert files['repo'].iloc[0] == repo_name
+    assert files['type'].iloc[0] == 'file'
+    assert files['size_bytes'].iloc[0] == 26
 
     adapter.delete_repo(repo_name)
     assert repo_name not in set(adapter.list_repos().repo)
@@ -267,12 +273,13 @@ def test_list_job_get_logs(adapter, pipeline_spec_2):
     skip_if_pachyderm_unavailable(adapter)
     pipeline_name = pipeline_spec_2['pipeline']['name']
     cron_input_name = pipeline_spec_2['input']['cron']['name']
+    tick_repo_name = pipeline_name + '_' + cron_input_name
     delete_pipeline_if_exists(adapter, pipeline_name)
 
     adapter.create_pipeline(pipeline_spec_2)
     assert await_pipeline_new_state(adapter, pipeline_name, initial_state='starting') == 'running'
 
-    adapter.commit_timestamp_file(pipeline_name + '_' + cron_input_name, overwrite=True)
+    adapter.commit_timestamp_file(tick_repo_name, overwrite=True)
     assert await_job_completed_state(adapter, pipeline_name) == 'success'
 
     jobs = adapter.list_jobs(pipeline=pipeline_name)
@@ -280,6 +287,12 @@ def test_list_job_get_logs(adapter, pipeline_spec_2):
     assert (jobs['finished'] - jobs['started']).dt.total_seconds().round().iloc[0] > -10
     assert jobs['data_processed'].iloc[0] == jobs['data_total'].iloc[0] == 1
     assert jobs['data_skipped'].iloc[0] == 0
+
+    datums = adapter.list_datums(job=jobs['job'].iloc[0])
+    assert len(datums) == 1
+    assert datums['job'].iloc[0] == jobs['job'].iloc[0]
+    assert datums['repo'].iloc[0] == tick_repo_name
+    assert datums['size_bytes'].iloc[0] > 0
 
     logs = adapter.get_logs(pipeline=pipeline_name)
     logs = logs[logs['user']]
