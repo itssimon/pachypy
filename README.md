@@ -6,6 +6,7 @@
 [![Codacy Badge](https://img.shields.io/codacy/grade/889241976fca40a18591be7db43698fe.svg)](https://app.codacy.com/app/itssimon/pachypy)
 [![Requirements Status](https://requires.io/github/itssimon/pachypy/requirements.svg?branch=master)](https://requires.io/github/itssimon/pachypy/requirements/?branch=master)
 [![Stability Status](https://img.shields.io/badge/stability-alpha-yellow.svg)](#)
+[![Gitter](https://badges.gitter.im/pachypy/community.svg)](https://gitter.im/pachypy/community)
 
 This package aims to make interactions with a [Pachyderm](https://github.com/pachyderm/pachyderm) cluster more efficient and user-friendly.
 
