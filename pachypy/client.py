@@ -428,6 +428,22 @@ class PachydermClient:
         return pipeline_specs
 
     def update_image_digest(self, image: str) -> str:
+        """Add or update the latest image digest to/in an image string of format repository:tag@digest.
+
+        Chooses a container registry adapter to retrieve the latest image digest from
+        based on the repository name in the image string:
+
+         - Amazon ECR if the repository contains "ecr.*.amazonaws.com"
+         - Google Container Registry if the repository contains "gcr.io"
+         - Docker Registry otherwise
+
+        Args:
+            image: Image string to add/update digest for.
+
+        Returns:
+            Updated image string (repository:tag@digest) if the latest digest was retrieved from the registry.
+            Returns an unchanged image string if the image was not found in the registry.
+        """
         repository, tag, digest = _split_image_string(image)
 
         if re.match(r'.+\.ecr\..+\.amazonaws\.com/.+', repository):

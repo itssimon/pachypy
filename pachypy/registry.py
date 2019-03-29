@@ -121,7 +121,7 @@ class AmazonECRAdapter(ContainerRegistryAdapter):
         self.ecr_client = boto3.client('ecr', aws_access_key_id=aws_access_key_id, aws_secret_access_key=aws_secret_access_key)
 
     @lru_cache()
-    def _get_image_digest_from_ecr(self, repository: str, tag: str) -> str:
+    def get_image_digest(self, repository: str, tag: str) -> str:
         try:
             res = self.ecr_client.batch_get_image(imageIds=[{'imageTag': tag}], repositoryName=repository)
             return res['images'][0]['imageId']['imageDigest']
@@ -134,7 +134,7 @@ class GCRAdapter(ContainerRegistryAdapter):
     """Google Cloud Container Registry (gcr.io) adapter."""
 
     def __init__(self):
-        raise NotImplementedError
+        pass
 
-    def _get_image_digest_from_ecr(self, repository: str, tag: str) -> str:
+    def get_image_digest(self, repository: str, tag: str) -> str:
         raise NotImplementedError

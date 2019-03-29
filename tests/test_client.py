@@ -19,6 +19,7 @@ def mock_list_commits(_, repo, n=20):
 
 
 def mock_list_files(_, repo, commit=None, glob='**'):
+    del glob
     df = get_mock_from_csv('list_files.csv', datetime_cols=['committed'])
     return df[df['repo'] == repo]
 
@@ -228,6 +229,29 @@ def test_stop_start_pipelines(client, **mocks):
     with patch(list_pipeline_names, MagicMock(return_value=pipelines)):
         assert client.stop_pipelines('test_a*') == pipelines
         assert client.start_pipelines('test_a*') == pipelines
+
+
+def test_update_image_digest(client):
+    digest = 'sha1:123'
+    tag = 'tag'
+    with patch('pachypy.registry.DockerRegistryAdapter.get_image_digest', MagicMock(return_value=digest)) as mock:
+        repo = 'user/repo'
+        assert client.update_image_digest(f'{repo}:{tag}') == f'{repo}:{tag}@{digest}'
+        assert client.update_image_digest(f'{repo}:{tag}@sha1:000') == f'{repo}:{tag}@{digest}'
+        mock.assert_called_with(repo, tag)
+    with patch('pachypy.registry.AmazonECRAdapter.get_image_digest', MagicMock(return_value=digest)) as mock:
+        repo = 'xxx.dkr.ecr.xxx.amazonaws.com/repo'
+        assert client.update_image_digest(f'{repo}:{tag}') == f'{repo}:{tag}@{digest}'
+        assert client.update_image_digest(f'{repo}:{tag}@sha1:000') == f'{repo}:{tag}@{digest}'
+        mock.assert_called_with(repo, tag)
+    with patch('pachypy.registry.GCRAdapter.get_image_digest', MagicMock(return_value=digest)) as mock:
+        repo = 'gcr.io/repo'
+        assert client.update_image_digest(f'{repo}:{tag}') == f'{repo}:{tag}@{digest}'
+        assert client.update_image_digest(f'{repo}:{tag}@sha1:000') == f'{repo}:{tag}@{digest}'
+        mock.assert_called_with(repo, tag)
+    with patch('pachypy.registry.DockerRegistryAdapter.get_image_digest', MagicMock(return_value=None)) as mock:
+        for image in ['user/repo:tag', 'user/repo:tag@sha1:000']:
+            assert client.update_image_digest(image) == image
 
 
 def test_split_image_string():
