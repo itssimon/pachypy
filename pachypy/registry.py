@@ -72,23 +72,23 @@ class DockerRegistryAdapter(ContainerRegistryAdapter):
             raise RegistryAuthorizationException(f'Authentication with Docker registry {self.registry_host} failed. Run `docker login` first?')
         try:
             manifest = json.loads(dxf.get_manifest(tag))
-            return manifest['config']['digest']
+            return str(manifest['config']['digest'])
         except DXFUnauthorizedError:
             raise RegistryImageNotFoundException(f'Image {repository}:{tag} not found in registry {self.registry_host}')
 
-    def load_auth_from_file(self, file: str = '~/.docker/config.json') -> str:
+    def load_auth_from_file(self, file: str = '~/.docker/config.json') -> Optional[str]:
         try:
             with open(os.path.expanduser(file)) as f:
                 data = json.load(f)
                 print(data)
         except (FileNotFoundError, json.JSONDecodeError):
             return None
-        auth = data.get('auths', {}).get(self.registry_url, {}).get('auth', None)
-        if auth is None and 'credsStore' in data:
+        auth = data.get('auths', {}).get(self.registry_url, {}).get('auth', '')
+        if not auth and 'credsStore' in data:
             return self.load_auth_from_cred_store(data['credsStore'])
-        return auth
+        return auth or None
 
-    def load_auth_from_cred_store(self, cred_store: str) -> str:
+    def load_auth_from_cred_store(self, cred_store: str) -> Optional[str]:
         if not re.match(r'^[\w\d\-_]+$', cred_store):
             raise ValueError(f'{cred_store} is not a valid credentials store.')
         try:
@@ -124,7 +124,7 @@ class AmazonECRAdapter(ContainerRegistryAdapter):
     def get_image_digest(self, repository: str, tag: str) -> str:
         try:
             res = self.ecr_client.batch_get_image(imageIds=[{'imageTag': tag}], repositoryName=repository)
-            return res['images'][0]['imageId']['imageDigest']
+            return str(res['images'][0]['imageId']['imageDigest'])
         except KeyError:
             raise RegistryImageNotFoundException(f'Image {repository}:{tag} not found in Amazon ECR')
 
@@ -135,6 +135,3 @@ class GCRAdapter(ContainerRegistryAdapter):
 
     def __init__(self):
         pass
-
-    def get_image_digest(self, repository: str, tag: str) -> str:
-        raise NotImplementedError
