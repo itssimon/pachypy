@@ -5,6 +5,7 @@ RED="\033[0;31m"
 GREEN="\033[0;32m"
 YELLOW="\033[0;33m"
 BLUE_BOLD="\033[1;34m"
+CYAN="\033[0;36m"
 
 REQUIRE=("kubectl" "pachctl")
 
@@ -19,7 +20,7 @@ if kubectl config get-contexts | grep -q "docker-for-desktop"; then
     CONTEXT="docker-for-desktop"
     echo -e "${BLUE_BOLD}Using Kubernetes on Docker for Desktop...${NC}"
 
-    EXITMSG="\n${GREEN}Done testing? You can reset the local Kubernetes cluster in the Docker Desktop preferences under Reset > Reset Kubernetes cluster!${NC}"
+    EXITMSG="\n${CYAN}Done testing? You can reset the local Kubernetes cluster in the Docker Desktop preferences under Reset > Reset Kubernetes cluster!${NC}"
 else
     CONTEXT="minikube"
     echo -e "${BLUE_BOLD}Using Minikube...${NC}"
@@ -34,7 +35,7 @@ else
         minikube start
     fi
 
-    EXITMSG="\n${GREEN}Done testing? You can delete the Minikube cluster by running 'minikube delete'!${NC}"
+    EXITMSG="\n${CYAN}Done testing? You can delete the Minikube cluster by running 'minikube delete'!${NC}"
 fi
 
 if ! kubectl config current-context | grep -q "${CONTEXT}"; then
