@@ -240,7 +240,7 @@ class PrettyPachydermClient(PachydermClient):
             message = row.message
             if 'warning' in message.lower():
                 color = 'magenta'
-            elif 'error' in message.lower() or 'exception' in message.lower():
+            elif 'error' in message.lower() or 'exception' in message.lower() or 'critical' in message.lower():
                 color = 'red'
             cprint(f'[{row.ts}] {message}', color)
             job = row.job

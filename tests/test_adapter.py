@@ -214,9 +214,7 @@ def test_create_update_delete_pipeline(adapter, pipeline_spec_1):
     assert pipeline_name in set(pipelines.pipeline)
     assert pipelines.loc[pipelines.pipeline == pipeline_name, 'image'].iloc[0] == pipeline_spec_1['transform']['image']
     assert pipelines.loc[pipelines.pipeline == pipeline_name, 'cron_spec'].iloc[0] == pipeline_spec_1['input']['cron']['spec']
-
-    repos = adapter.list_repos()
-    assert len(repos) > 0 and pipeline_name in set(repos.repo)
+    assert pipeline_name in set(adapter.list_repo_names())
 
     pipeline_spec_1['transform']['image'] = 'alpine:edge'
     adapter.update_pipeline(pipeline_spec_1)
@@ -251,6 +249,7 @@ def test_create_commit_delete_repo(adapter):
     delete_repo_if_exists(adapter, repo_name)
 
     adapter.create_repo(repo_name)
+    assert repo_name in set(adapter.list_repo_names())
     assert repo_name in set(adapter.list_repos().repo)
     assert adapter.get_last_commit(repo_name) is None
     assert len(adapter.list_files(repo_name)) == 0
@@ -269,7 +268,7 @@ def test_create_commit_delete_repo(adapter):
     assert files['size_bytes'].iloc[0] == 26
 
     adapter.delete_repo(repo_name)
-    assert repo_name not in set(adapter.list_repos().repo)
+    assert repo_name not in set(adapter.list_repo_names())
 
 
 def test_list_job_get_logs(adapter, pipeline_spec_2):
