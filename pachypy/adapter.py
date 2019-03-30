@@ -28,7 +28,7 @@ from python_pachyderm.pfs_client import (
 
 class PachydermException(Exception):
 
-    def __init__(self, message: str, code: object = None):
+    def __init__(self, message: str, code=None):
         super().__init__(message)
         try:
             self.status_code = code.value[0]
@@ -91,13 +91,13 @@ class PachydermAdapter:
 
     @property
     def host(self) -> str:
-        return self.pps_client.channel._channel.target().decode().split(':')[0]
+        return str(self.pps_client.channel._channel.target().decode().split(':')[0])
 
     @property
     def port(self) -> int:
         return int(self.pps_client.channel._channel.target().decode().split(':')[1])
 
-    def check_connectivity(self, timeout: int = 10) -> bool:
+    def check_connectivity(self, timeout: float = 10.0) -> bool:
         """Checks the connectivity to pachd. Tries to connect if not currently connected.
 
         The gRPC channel connectivity knows 5 states:
@@ -171,7 +171,7 @@ class PachydermAdapter:
         """
         try:
             commit = next(self.pfs_client.stub.ListCommitStream(ListCommitRequest(repo=Repo(name=repo))))
-            return commit.commit.id
+            return str(commit.commit.id)
         except StopIteration:
             return None
 
@@ -220,7 +220,7 @@ class PachydermAdapter:
 
         def cron_spec(i) -> str:
             if i.cron.spec != '':
-                return i.cron.spec
+                return str(i.cron.spec)
             cross_or_union = i.cross or i.union
             if cross_or_union:
                 for j in cross_or_union:
@@ -236,14 +236,14 @@ class PachydermAdapter:
                 return '(' + ' ∪ '.join([input_string(j) for j in i.union]) + ')'
             elif i.atom.name:
                 name = i.atom.name + ('/' + i.atom.branch if i.atom.branch != 'master' else '')
-                return name + ':' + i.atom.glob
+                return str(name + ':' + i.atom.glob)
             elif i.pfs.name:
                 name = i.pfs.name + ('/' + i.pfs.branch if i.pfs.branch != 'master' else '')
-                return name + ':' + i.pfs.glob
+                return str(name + ':' + i.pfs.glob)
             elif i.cron.name:
-                return i.cron.name
+                return str(i.cron.name)
             elif i.git.name:
-                return i.git.name + ('/' + i.git.branch if i.git.branch != 'master' else '')
+                return str(i.git.name + ('/' + i.git.branch if i.git.branch != 'master' else ''))
             else:
                 return '?'
 
