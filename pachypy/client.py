@@ -5,6 +5,7 @@ __all__ = [
 import os
 import re
 import yaml
+import logging
 from glob import glob
 from pathlib import Path
 from fnmatch import fnmatch
@@ -14,7 +15,6 @@ from typing import List, Tuple, Set, Iterable, Callable, Union, Optional
 
 import pandas as pd
 from tzlocal import get_localzone
-from termcolor import cprint
 
 from .adapter import PachydermAdapter, PachydermException
 from .registry import DockerRegistryAdapter, AmazonECRAdapter, GCRAdapter
@@ -43,7 +43,6 @@ class PachydermClient:
         pipeline_spec_files: Glob pattern or list of file paths to pipeline specs in YAML format.
         pipeline_spec_transformer: Function that takes a pipeline spec as dictionary as the only argument
             and returns a transformed pipeline spec.
-        cprint: Whether to print colored status messages to stdout when interacting with this class.
     """
 
     def __init__(
@@ -53,20 +52,25 @@ class PachydermClient:
         update_image_digests: bool = True,
         pipeline_spec_files: FileGlob = None,
         pipeline_spec_transformer: Optional[Callable[[dict], dict]] = None,
-        cprint: bool = True
     ):
         self._pipeline_spec_files = None
         self._docker_registry_adapter = None
         self._ecr_adapter = None
         self._gcr_adapter = None
+        self._logger = None
 
         self.adapter = PachydermAdapter(host=host, port=port)
         self.update_image_digests = update_image_digests
         self.pipeline_spec_files = pipeline_spec_files
         self.pipeline_spec_transformer = pipeline_spec_transformer
-        self.cprint = cprint
 
-        self._cprint(f'Created client for Pachyderm cluster at {self.adapter.host}:{self.adapter.port}', 'green')
+        self.logger.debug(f'Created client for Pachyderm cluster at {self.adapter.host}:{self.adapter.port}')
+
+    @property
+    def logger(self):
+        if self._logger is None:
+            self._logger = logging.getLogger('pachypy')
+        return self._logger
 
     @property
     def pipeline_spec_files(self) -> Set[str]:
@@ -251,11 +255,11 @@ class PachydermClient:
         created_repos = []
         for repo in repos:
             if repo not in existing_repos:
-                self._cprint(f'Creating repo {repo}', 'yellow')
                 self.adapter.create_repo(repo=repo)
                 created_repos.append(repo)
+                self.logger.info(f'Created repo {repo}')
             else:
-                self._cprint(f'Repo {repo} already exists', 'red')
+                self.logger.warning(f'Repo {repo} already exists')
         return created_repos
 
     def delete_repos(self, repos: WildcardFilter) -> List[str]:
@@ -269,8 +273,8 @@ class PachydermClient:
         """
         repos = self._list_repo_names(repos)
         for repo in repos:
-            self._cprint(f'Deleting repo {repo}', 'yellow')
             self.adapter.delete_repo(repo)
+            self.logger.info(f'Deleted repo {repo}')
         return repos
 
     def create_pipelines(self, pipelines: WildcardFilter = '*', pipeline_specs: Optional[List[dict]] = None,
@@ -317,8 +321,8 @@ class PachydermClient:
         """
         pipelines = self._list_pipeline_names(pipelines)
         for pipeline in pipelines[::-1]:
-            self._cprint(f'Deleting pipeline {pipeline}', 'yellow')
             self.adapter.delete_pipeline(pipeline)
+            self.logger.info(f'Deleted pipeline {pipeline}')
         return pipelines[::-1]
 
     def start_pipelines(self, pipelines: WildcardFilter) -> List[str]:
@@ -332,8 +336,8 @@ class PachydermClient:
         """
         pipelines = self._list_pipeline_names(pipelines)
         for pipeline in pipelines:
-            self._cprint(f'Starting pipeline {pipeline}', 'yellow')
             self.adapter.start_pipeline(pipeline)
+            self.logger.info(f'Started pipeline {pipeline}')
         return pipelines
 
     def stop_pipelines(self, pipelines: WildcardFilter) -> List[str]:
@@ -347,8 +351,8 @@ class PachydermClient:
         """
         pipelines = self._list_pipeline_names(pipelines)
         for pipeline in pipelines:
-            self._cprint(f'Stopping pipeline {pipeline}', 'yellow')
             self.adapter.stop_pipeline(pipeline)
+            self.logger.info(f'Stopped pipeline {pipeline}')
         return pipelines
 
     def trigger_pipeline(self, pipeline: str, input_name: str = 'tick') -> None:
@@ -367,7 +371,10 @@ class PachydermClient:
         """Read pipelines specs from files.
 
         The spec files are defined through the `pipeline_spec_files` property,
-        which can be a list of file paths or a valid glob pattern.
+        which can be a list of file paths or glob patterns.
+
+        File names are expected to be a prefix of pipeline names defined in them
+        or to also match the given `pipelines` pattern.
 
         Args:
             pipelines: Pattern to filter pipeline specs by pipeline name. Supports shell-style wildcards.
@@ -379,7 +386,6 @@ class PachydermClient:
             if _wildcard_match(os.path.basename(f), pipelines) or (isinstance(pipelines, str) and pipelines.startswith(os.path.splitext(os.path.basename(f))[0]))
         ]
         files = files_subset if len(files_subset) > 0 else files
-        self._cprint(f'Reading pipeline specifications from {len(files)} files', 'yellow')
 
         # Read pipeline specs from files
         pipeline_specs = []
@@ -389,6 +395,7 @@ class PachydermClient:
                 if not isinstance(file_content, list):
                     raise TypeError(f'File {os.path.basename(file)} does not contain a list')
                 pipeline_specs.extend(file_content)
+        self.logger.debug(f'Read pipeline specifications from {len(files)} files')
 
         # Filter pipelines
         if pipelines != '*':
@@ -402,7 +409,11 @@ class PachydermClient:
         # Transform pipeline specs to meet the Pachyderm specification format
         pipeline_specs = self.transform_pipeline_specs(pipeline_specs)
 
-        self._cprint(f'Matched specification for {len(pipeline_specs)} pipelines', 'green' if len(pipeline_specs) > 0 else 'red')
+        if len(pipeline_specs) > 0:
+            self.logger.debug(f'Pattern "{pipelines}" matched specification for {len(pipeline_specs)} pipelines')
+        else:
+            self.logger.warning(f'Pattern "{pipelines}" did not match any pipeline specifications')
+
         return pipeline_specs
 
     def transform_pipeline_specs(self, pipeline_specs: List[dict]) -> List[dict]:
@@ -478,15 +489,15 @@ class PachydermClient:
             pipeline = pipeline_spec['pipeline']['name']
             if pipeline in existing_pipelines and not recreate:
                 if update:
-                    self._cprint(f'Updating pipeline {pipeline}', 'yellow')
                     self.adapter.update_pipeline(pipeline_specs, reprocess=reprocess)
                     updated_pipelines.append(pipeline)
+                    self.logger.info(f'Updated pipeline {pipeline}')
                 else:
-                    self._cprint(f'Pipeline {pipeline} already exists', 'red')
+                    self.logger.warning(f'Pipeline {pipeline} already exists')
             else:
-                self._cprint(f'Creating pipeline {pipeline}', 'yellow')
                 self.adapter.create_pipeline(pipeline_specs)
                 created_pipelines.append(pipeline)
+                self.logger.info(f'Created pipeline {pipeline}')
 
         return PipelineChanges(created=created_pipelines, updated=updated_pipelines, deleted=deleted_pipelines)
 
@@ -495,10 +506,6 @@ class PachydermClient:
 
     def _list_repo_names(self, match: WildcardFilter = None) -> List[str]:
         return _wildcard_filter(self.adapter.list_repo_names(), match)
-
-    def _cprint(self, text, color=None, on_color=None):
-        if self.cprint:
-            cprint(text, color=color, on_color=on_color)
 
 
 def _wildcard_filter(x: Iterable[str], pattern: WildcardFilter) -> List[str]:

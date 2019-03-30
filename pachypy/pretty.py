@@ -2,20 +2,21 @@ __all__ = [
     'PrettyPachydermClient'
 ]
 
+import logging
 from typing import Dict, List, Iterable, Union, Callable
 from datetime import datetime, date
 from dateutil.relativedelta import relativedelta
 
-from IPython.core.display import HTML
 import pandas.io.formats.style as style
 import pandas as pd
 import numpy as np
+from IPython.core.display import HTML
 from termcolor import cprint
 
 from .client import PachydermClient
 
 
-FONT_AWESOME = '<link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.8.1/css/all.css" crossorigin="anonymous">'
+FONT_AWESOME_CSS_URL = 'https://use.fontawesome.com/releases/v5.8.1/css/all.css'
 BAR_COLOR = '#105ecd33'
 PROGRESS_BAR_COLOR = '#03820333'
 
@@ -23,12 +24,32 @@ PROGRESS_BAR_COLOR = '#03820333'
 def use_font_awesome(f: Callable):
     def use_font_awesome_wrapper(self, *args, **kwargs):
         ret = f(self, *args, **kwargs)
-        return HTML(FONT_AWESOME + ret.render())
-
+        return HTML(f'<link rel="stylesheet" href="{FONT_AWESOME_CSS_URL}" crossorigin="anonymous">' + ret.render())
     return use_font_awesome_wrapper
 
 
+class CPrintHandler(logging.StreamHandler):
+
+    def emit(self, record):
+        color = {
+            logging.INFO: 'green',
+            logging.WARNING: 'yellow',
+            logging.ERROR: 'red',
+            logging.CRITICAL: 'red',
+        }.get(record.levelno, 'grey')
+        cprint(self.format(record), color=color)
+
+
 class PrettyPachydermClient(PachydermClient):
+
+    @property
+    def logger(self):
+        if self._logger is None:
+            self._logger = logging.getLogger('pachypy')
+            self._logger.handlers = [CPrintHandler()]
+            self._logger.setLevel(logging.DEBUG)
+            self._logger.propagate = False
+        return self._logger
 
     @use_font_awesome
     def list_repos(self, repos: str = '*') -> style.Styler:
