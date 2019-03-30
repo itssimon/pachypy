@@ -3,7 +3,7 @@ __all__ = [
 ]
 
 import logging
-from typing import Dict, List, Iterable, Union, Callable
+from typing import Dict, List, Iterable, Union, Callable, Optional
 from datetime import datetime, date
 from dateutil.relativedelta import relativedelta
 
@@ -13,24 +13,30 @@ import numpy as np
 from IPython.core.display import HTML
 from termcolor import cprint
 
-from .client import PachydermClient
+from .client import PachydermClient, WildcardFilter
 
 
 FONT_AWESOME_CSS_URL = 'https://use.fontawesome.com/releases/v5.8.1/css/all.css'
+CLIPBOARD_JS_URL = 'https://cdnjs.cloudflare.com/ajax/libs/clipboard.js/2.0.4/clipboard.js'
 BAR_COLOR = '#105ecd33'
 PROGRESS_BAR_COLOR = '#03820333'
 
 
-def use_font_awesome(f: Callable):
-    def use_font_awesome_wrapper(self, *args, **kwargs):
+def inject_dependencies(f: Callable):
+    def inject_dependencies_wrapper(self, *args, **kwargs):
         ret = f(self, *args, **kwargs)
-        return HTML(f'<link rel="stylesheet" href="{FONT_AWESOME_CSS_URL}" crossorigin="anonymous">' + ret.render())
-    return use_font_awesome_wrapper
+        fa_css = f'<link rel="stylesheet" href="{FONT_AWESOME_CSS_URL}" crossorigin="anonymous">'
+        cb_js = f'''
+            <script src="{CLIPBOARD_JS_URL}" crossorigin="anonymous"></script>
+            <script>var clipboard = new ClipboardJS('.copyable');</script>
+        '''
+        return HTML(fa_css + cb_js + ret.render())
+    return inject_dependencies_wrapper
 
 
 class CPrintHandler(logging.StreamHandler):
 
-    def emit(self, record):
+    def emit(self, record: logging.LogRecord):
         color = {
             logging.INFO: 'green',
             logging.WARNING: 'yellow',
@@ -42,6 +48,11 @@ class CPrintHandler(logging.StreamHandler):
 
 class PrettyPachydermClient(PachydermClient):
 
+    table_styles = [
+        dict(selector='th', props=[('text-align', 'left'), ('white-space', 'nowrap')]),
+        dict(selector='td', props=[('text-align', 'left'), ('white-space', 'nowrap'), ('padding-right', '20px')]),
+    ]
+
     @property
     def logger(self):
         if self._logger is None:
@@ -51,8 +62,8 @@ class PrettyPachydermClient(PachydermClient):
             self._logger.propagate = False
         return self._logger
 
-    @use_font_awesome
-    def list_repos(self, repos: str = '*') -> style.Styler:
+    @inject_dependencies
+    def list_repos(self, repos: WildcardFilter = '*') -> style.Styler:
         df = super().list_repos(repos=repos).reset_index()
         df.rename({
             'repo': 'Repo',
@@ -66,13 +77,58 @@ class PrettyPachydermClient(PachydermClient):
         return df[['Repo', 'Tick', 'Branches', 'Size', 'Created']].style \
             .bar(subset=['Size'], color=BAR_COLOR) \
             .format({'Created': _format_datetime, 'Size': _format_size}) \
-            .set_properties(**{'text-align': 'left'}) \
-            .set_properties(subset=['Size', 'Created'], **{'white-space': 'nowrap'}) \
-            .set_table_styles([dict(selector='th', props=[('text-align', 'left'), ('white-space', 'nowrap')])]) \
+            .set_properties(subset=['Branches'], **{'white-space': 'wrap'}) \
+            .set_table_styles(self.table_styles) \
             .hide_index()
 
-    @use_font_awesome
-    def list_pipelines(self, pipelines: str = '*') -> style.Styler:
+    @inject_dependencies
+    def list_commits(self, repos: WildcardFilter, n: int = 10) -> style.Styler:
+        df = super().list_commits(repos=repos, n=n).reset_index()
+        df.rename({
+            'repo': 'Repo',
+            'commit': 'Commit',
+            'size_bytes': 'Size',
+            'started': 'Started',
+            'finished': 'Finished',
+            'parent_commit': 'Parent Commit',
+        }, axis=1, inplace=True)
+        return df[['Repo', 'Commit', 'Size', 'Started', 'Finished', 'Parent Commit']].style \
+            .bar(subset=['Size'], color=BAR_COLOR) \
+            .format({
+                'Commit': _hash,
+                'Parent Commit': _hash,
+                'Started': _format_datetime,
+                'Finished': _format_datetime,
+                'Size': _format_size
+            }) \
+            .set_table_styles(self.table_styles) \
+            .hide_index()
+
+    @inject_dependencies
+    def list_files(self, repos: WildcardFilter, commit: str = None, glob: str = '**', files_only: bool = True) -> style.Styler:
+        df = super().list_files(repos=repos, commit=commit, glob=glob, files_only=files_only).reset_index()
+        df.rename({
+            'repo': 'Repo',
+            'type': 'Type',
+            'path': 'Path',
+            'size_bytes': 'Size',
+            'commit': 'Commit',
+            'committed': 'Committed',
+        }, axis=1, inplace=True)
+        return df[['Repo', 'Type', 'Path', 'Size', 'Commit', 'Committed']].style \
+            .bar(subset=['Size'], color=BAR_COLOR) \
+            .format({
+                'Type': _format_file_type,
+                'Size': _format_size,
+                'Commit': _hash,
+                'Committed': _format_datetime
+            }) \
+            .set_properties(subset=['Path'], **{'white-space': 'wrap'}) \
+            .set_table_styles(self.table_styles) \
+            .hide_index()
+
+    @inject_dependencies
+    def list_pipelines(self, pipelines: WildcardFilter = '*') -> style.Styler:
         df = super().list_pipelines(pipelines=pipelines)
         df['sort_key'] = df.index.map(_pipeline_sort_key(df['input_repos'].to_dict()))
         df.reset_index(inplace=True)
@@ -99,13 +155,12 @@ class PrettyPachydermClient(PachydermClient):
         return df[['Pipeline', 'State', 'Cron', 'Input', 'Output', 'Tries', 'Parallelism', 'Jobs', 'Created']].style \
             .apply(_style_pipeline_state, subset=['State']) \
             .format({'State': _format_pipeline_state, 'Created': _format_datetime}) \
-            .set_properties(**{'text-align': 'left'}) \
-            .set_properties(subset=['State', 'Cron', 'Jobs', 'Created'], **{'white-space': 'nowrap'}) \
-            .set_table_styles([dict(selector='th', props=[('text-align', 'left')])]) \
+            .set_properties(subset=['Input'], **{'white-space': 'wrap'}) \
+            .set_table_styles(self.table_styles) \
             .hide_index()
 
-    @use_font_awesome
-    def list_jobs(self, pipelines: str = '*', n: int = 20) -> style.Styler:
+    @inject_dependencies
+    def list_jobs(self, pipelines: WildcardFilter = '*', n: int = 20) -> style.Styler:
         df = super().list_jobs(pipelines=pipelines, n=n).reset_index()
         df.rename({
             'job': 'Job',
@@ -116,9 +171,7 @@ class PrettyPachydermClient(PachydermClient):
             'restart': 'Restarts',
             'download_bytes': 'Downloaded',
             'upload_bytes': 'Uploaded',
-            'download_time': 'Download Time',
-            'process_time': 'Process Time',
-            'upload_time': 'Upload Time',
+            'output_commit': 'Output Commit',
         }, axis=1, inplace=True)
         df['Duration'] = df['Duration'].dt.total_seconds()
         df['Progress'] = \
@@ -126,24 +179,54 @@ class PrettyPachydermClient(PachydermClient):
             '<span style="color: green">' + df['data_processed'].astype(str) + '</span>' + \
             np.where(df['data_skipped'] > 0, ' + <span style="color: purple">' + df['data_skipped'].astype(str) + '</span>', '') + \
             ' / <span>' + df['data_total'].astype(str) + '</span>'
-        return df[['Job', 'Pipeline', 'State', 'Started', 'Duration', 'Progress', 'Restarts', 'Downloaded', 'Uploaded']].style \
+        return df[['Job', 'Pipeline', 'State', 'Started', 'Duration', 'Progress', 'Restarts', 'Downloaded', 'Uploaded', 'Output Commit']].style \
             .bar(subset=['Duration'], color=BAR_COLOR) \
             .apply(_style_job_state, subset=['State']) \
             .apply(_style_job_progress, subset=['Progress']) \
             .format({
+                'Job': _hash,
                 'State': _format_job_state,
                 'Started': _format_datetime,
                 'Duration': _format_duration,
                 'Restarts': lambda i: _fa('undo') + str(i) if i > 0 else '',
                 'Downloaded': _format_size,
-                'Uploaded': _format_size
+                'Uploaded': _format_size,
+                'Output Commit': _hash
             }) \
-            .set_properties(**{'text-align': 'left'}) \
-            .set_properties(subset=['State', 'Started', 'Duration', 'Progress'], **{'white-space': 'nowrap'}) \
-            .set_table_styles([dict(selector='th', props=[('text-align', 'left')])]) \
+            .set_table_styles(self.table_styles) \
             .hide_index()
 
-    def get_logs(self, pipelines: str = '*', last_job_only: bool = True, user_only: bool = False) -> None:
+    @inject_dependencies
+    def list_datums(self, job: str) -> style.Styler:
+        df = super().list_datums(job=job).reset_index()
+        df.rename({
+            'job': 'Job',
+            'datum': 'Datum',
+            'state': 'State',
+            'repo': 'Repo',
+            'type': 'Type',
+            'path': 'Path',
+            'size_bytes': 'Size',
+            'commit': 'Commit',
+            'committed': 'Committed',
+        }, axis=1, inplace=True)
+        return df[['Job', 'Datum', 'State', 'Repo', 'Type', 'Path', 'Size', 'Commit', 'Committed']].style \
+            .bar(subset=['Size'], color=BAR_COLOR) \
+            .apply(_style_datum_state, subset=['State']) \
+            .format({
+                'Job': _hash,
+                'Datum': _hash,
+                'State': _format_datum_state,
+                'Type': _format_file_type,
+                'Size': _format_size,
+                'Commit': _hash,
+                'Committed': _format_datetime
+            }) \
+            .set_properties(subset=['Path'], **{'white-space': 'wrap'}) \
+            .set_table_styles(self.table_styles) \
+            .hide_index()
+
+    def get_logs(self, pipelines: WildcardFilter = '*', datum: Optional[str] = None, last_job_only: bool = True, user_only: bool = False) -> None:
         df = super().get_logs(pipelines=pipelines, last_job_only=last_job_only, user_only=user_only)
         job = None
         worker = None
@@ -191,6 +274,13 @@ def _fa(i: str) -> str:
     return f'<i class="fas fa-fw fa-{i}"></i>&nbsp;'
 
 
+def _hash(s: str) -> str:
+    if pd.isna(s):
+        return ''
+    short = s[:5] + '..' + s[-5:] if len(s) > 12 else s
+    return f'<pre class="copyable" title="{s} (click to copy)" data-clipboard-text="{s}" style="cursor: copy; background: none; white-space: nowrap;">{short}</pre>'
+
+
 def _style_pipeline_state(s: Iterable[str]) -> List[str]:
     color = {
         'starting': 'orange',
@@ -215,7 +305,17 @@ def _style_job_state(s: Iterable[str]) -> List[str]:
     return ['color: {c}; font-weight: bold'.format(c=color.get(v, 'gray')) for v in s]
 
 
-def _style_job_progress(s: Iterable[str]) -> List[str]:
+def _style_datum_state(s: Iterable[str]) -> List[str]:
+    color = {
+        'starting': 'orange',
+        'skipped': '#0251c9',
+        'success': 'green',
+        'failed': 'red',
+    }
+    return ['color: {c}; font-weight: bold'.format(c=color.get(v, 'gray')) for v in s]
+
+
+def _style_job_progress(s: pd.Series) -> List[str]:
     def css_bar(end):
         css = 'width: 10em; height: 80%;'
         if end > 0:
@@ -224,6 +324,13 @@ def _style_job_progress(s: Iterable[str]) -> List[str]:
         return css
     s = s.apply(lambda x: float(x.split('%')[0]))
     return [css_bar(x) if not pd.isna(x) and x < 100 else '' for x in s]
+
+
+def _format_file_type(s: str) -> str:
+    return {
+        'file': _fa('file') + s,
+        'dir': _fa('folder') + s,
+    }.get(s, s)
 
 
 def _format_pipeline_state(s: str) -> str:
@@ -246,6 +353,16 @@ def _format_job_state(s: str) -> str:
         'success': _fa('check') + s,
         'failure': _fa('bolt') + s,
         'killed': _fa('skull-crossbones') + s,
+    }.get(s, s)
+
+
+def _format_datum_state(s: str) -> str:
+    return {
+        'unknown': _fa('question') + s,
+        'starting': _fa('spinner') + s,
+        'skipped': _fa('forward') + s,
+        'success': _fa('check') + s,
+        'failed': _fa('bolt') + s,
     }.get(s, s)
 
 
