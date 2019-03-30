@@ -53,6 +53,16 @@ def test_format_job_state():
     assert icon in _format_job_state('killed')
 
 
+def test_format_datum_state():
+    from pachypy.pretty import _format_datum_state
+    icon = ' class="fa'
+    assert icon in _format_datum_state('unknown')
+    assert icon in _format_datum_state('starting')
+    assert icon in _format_datum_state('skipped')
+    assert icon in _format_datum_state('success')
+    assert icon in _format_datum_state('failed')
+
+
 def test_format_datetime():
     from datetime import datetime
     from dateutil.relativedelta import relativedelta as rd
@@ -117,6 +127,22 @@ def test_list_repos(pretty_client, **mocks):
 
 
 @patch_adapter()
+def test_list_commits(pretty_client, **mocks):
+    del mocks
+    html = pretty_client.list_commits('test_x_pipeline_3')
+    assert 'use.fontawesome.com' in html.data
+    assert '<table' in html.data and html.data.count('<tr') == 11
+
+
+@patch_adapter()
+def test_list_files(pretty_client, **mocks):
+    del mocks
+    html = pretty_client.list_files('test_x_pipeline_3', files_only=False)
+    assert 'use.fontawesome.com' in html.data
+    assert '<table' in html.data and html.data.count('<tr') == 11
+
+
+@patch_adapter()
 def test_list_pipelines(pretty_client, **mocks):
     del mocks
     html = pretty_client.list_pipelines()
@@ -130,6 +156,14 @@ def test_list_jobs(pretty_client, **mocks):
     html = pretty_client.list_jobs()
     assert 'use.fontawesome.com' in html.data
     assert '<table' in html.data and html.data.count('<tr') == 9
+
+
+@patch_adapter()
+def test_list_datums(pretty_client, **mocks):
+    del mocks
+    html = pretty_client.list_datums('e26ccf65131b4b3d9087cebc2f944279')
+    assert 'use.fontawesome.com' in html.data
+    assert '<table' in html.data and html.data.count('<tr') == 11
 
 
 @patch_adapter()
