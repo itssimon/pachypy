@@ -4,7 +4,6 @@ import time
 import json
 from datetime import datetime
 from typing import List, Callable, Generator, Union, Optional
-from contextlib import contextmanager
 from pathlib import Path
 
 import pandas as pd
@@ -57,35 +56,73 @@ def retry(f: Callable):
     return retry_wrapper
 
 
-def retry_generator(f: Callable):
-    def retry_wrapper(self, *args, **kwargs):
-        try:
-            yield from f(self, *args, **kwargs)
-        except _Rendezvous as e:
-            if e.code().value[1] == 'unavailable' and self._retries < self.max_retries:
-                if self.check_connectivity():
-                    self._retries += 1
-                    yield from retry_wrapper(self, *args, **kwargs)
-            raise PachydermException(e.details(), e.code())
-        else:
-            self._retries = 0
-    return retry_wrapper
-
-
 class PachydermCommitAdapter:
 
-    """Adapter class handling a commit.
+    """Adapter class and context manager for a commit.
 
     Objects of this class are typically created via :meth:`~pachypy.adapter.PachydermAdapter.commit`.
 
     Args:
         pfs_client: PFS client object.
-        commit: Commit object.
+        repo: Name of repository.
+        branch: Branch in repository. When the commit is started on a branch the previous head of the branch is
+                used as the parent of the commit. You may pass None in which case the new commit will have
+                no parent (unless parent_commit is specified) and will initially appear empty.
+        parent_commit: ID of parent commit. Upon creation the new commit will appear identical to the parent commit.
+            Data can safely be added to the new commit without affecting the contents of the parent commit.
     """
 
-    def __init__(self, pfs_client: PfsClient, commit: Commit):
+    def __init__(self, pfs_client: PfsClient, repo: str, branch: Optional[str] = 'master', parent_commit: Optional[str] = None):
         self.pfs_client = pfs_client
-        self.commit = commit
+        self.repo = repo
+        self.branch = branch
+        self.parent_commit = parent_commit
+        self.max_retries = 1
+        self._commit = None
+        self._finished = False
+        self._retries = 0
+
+    def __enter__(self):
+        self.start()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type is not None:
+            self.delete()
+        else:
+            self.finish()
+
+    @property
+    def commit(self) -> Optional[str]:
+        """Commit ID."""
+        if self._commit is not None:
+            return str(self._commit.id)
+        else:
+            return None
+
+    @property
+    def finished(self) -> bool:
+        """Whether the commit is finished."""
+        return self._finished
+
+    @retry
+    def start(self):
+        """Start the commit."""
+        self._raise_if_finished()
+        self._commit = self.pfs_client.start_commit(repo_name=self.repo, branch=self.branch, parent=self.parent_commit)
+
+    @retry
+    def finish(self):
+        """Finish the commit."""
+        self._raise_if_finished()
+        self.pfs_client.finish_commit(self._commit)
+        self._finished = True
+
+    @retry
+    def delete(self):
+        """Delete the commit."""
+        self.pfs_client.delete_commit(self._commit)
+        self._finished = True
 
     def put_file(self, file: Union[str, Path, io.IOBase], path: Optional[str] = None,
                  delimiter: str = 'none', target_file_datums: int = 0, target_file_bytes: int = 0) -> None:
@@ -103,6 +140,7 @@ class PachydermCommitAdapter:
             target_file_bytes: Specifies the target number of bytes in each written file.
                 Files may have more or fewer bytes than the target.
         """
+        self._raise_if_finished()
         if isinstance(file, io.IOBase):
             if path is None or path.endswith('/'):
                 raise ValueError('path needs to be specified (including filename)')
@@ -115,6 +153,7 @@ class PachydermCommitAdapter:
             with open(Path(file).expanduser().resolve(), 'rb') as f:
                 self.put_value(f.read(), path, delimiter=delimiter, target_file_datums=target_file_datums, target_file_bytes=target_file_bytes)
 
+    @retry
     def put_value(self, value: Union[str, bytes], path: str, encoding: str = 'utf-8',
                   delimiter: Optional[str] = None, target_file_datums: int = 0, target_file_bytes: int = 0) -> None:
         """Uploads a string or bytes `value` to a file in the given `path` in PFS.
@@ -129,6 +168,7 @@ class PachydermCommitAdapter:
             target_file_bytes: Specifies the target number of bytes in each written file.
                 Files may have more or fewer bytes than the target.
         """
+        self._raise_if_finished()
         if isinstance(value, str):
             value = value.encode(encoding)
         delimiter = {
@@ -139,9 +179,10 @@ class PachydermCommitAdapter:
             'sql': DELIMITER_SQL,
             'csv': DELIMITER_CSV
         }[delimiter.lower() if delimiter is not None else None]
-        self.pfs_client.put_file_bytes(self.commit, path, value,
+        self.pfs_client.put_file_bytes(self._commit, path, value,
                                        delimiter=delimiter, target_file_datums=target_file_datums, target_file_bytes=target_file_bytes)
 
+    @retry
     def put_file_url(self, url: str, path: str, recursive: bool = False) -> None:
         """Uploads a file using the content found at a URL.
 
@@ -152,15 +193,22 @@ class PachydermCommitAdapter:
             path: PFS path to upload file to. Needs to be the full PFS path including filename.
             recursive: Allow recursive scraping of some URL types, e.g. on s3:// URLs.
         """
-        self.pfs_client.put_file_url(self.commit, path, url, recursive=recursive)
+        self._raise_if_finished()
+        self.pfs_client.put_file_url(self._commit, path, url, recursive=recursive)
 
+    @retry
     def delete_file(self, path: str) -> None:
         """Deletes the file found in a given `path` in PFS.
 
         Args:
             path: PFS path of file to delete.
         """
-        self.pfs_client.delete_file(self.commit, path)
+        self._raise_if_finished()
+        self.pfs_client.delete_file(self._commit, path)
+
+    def _raise_if_finished(self):
+        if self.finished:
+            raise PachydermException(f'Commit {self.commit} is already finished')
 
 
 class PachydermAdapter:
@@ -406,7 +454,7 @@ class PachydermAdapter:
 
     @retry
     def list_jobs(self, pipeline: Optional[str] = None, n: int = 20) -> pd.DataFrame:
-        """Returns list of last n jobs.
+        """Returns list of last `n` jobs.
 
         Args:
             pipeline: Name of pipeline to return jobs for. Returns all jobs if not specified.
@@ -502,7 +550,7 @@ class PachydermAdapter:
 
         Args:
             pipeline: Name of pipeline to filter logs by.
-            job: ID of job to filter logs by. (optional)
+            job: ID of job to filter logs by.
             master: Whether to return logs from the Pachyderm master process.
         """
         res = []
@@ -609,33 +657,24 @@ class PachydermAdapter:
         else:
             raise NotImplementedError
 
-    @contextmanager
-    @retry_generator
-    def commit(self, repo: str, branch: Optional[str] = 'master', parent_commit: Optional[str] = None) -> Generator[PachydermCommitAdapter, None, None]:
-        """Context manager for commits.
+    def commit(self, repo: str, branch: Optional[str] = 'master', parent_commit: Optional[str] = None) -> PachydermCommitAdapter:
+        """Returns a context manager for commits.
 
-        Automatically starts and finishes a commit. If an exception occurs,
-        the started commit is deleted.
+        The context manager automatically starts and finishes a commit.
+        If an exception occurs, the started commit is not finished, but deleted.
 
         Args:
-            repo: Name of repo.
-            branch: Branch in repo. When the commit is started on a branch the previous head of the branch is
-                    used as the parent of the commit. You may pass None in which case the new commit will have
-                    no parent (unless parent_commit is specified) and will initially appear empty.
+            repo: Name of repository.
+            branch: Branch in repository. When the commit is started on a branch, the previous head of the branch is
+                    used as the parent of the commit. You may pass `None` in which case the new commit will have
+                    no parent (unless `parent_commit` is specified) and will initially appear empty.
             parent_commit: ID of parent commit. Upon creation the new commit will appear identical to the parent commit.
                 Data can safely be added to the new commit without affecting the contents of the parent commit.
 
         Returns:
             Commit adapter object allowing operations inside the commit.
         """
-        commit = self.pfs_client.start_commit(repo_name=repo, branch=branch, parent=parent_commit)
-        try:
-            yield PachydermCommitAdapter(self.pfs_client, commit)
-        except Exception as e:
-            self.pfs_client.delete_commit(commit)
-            raise e
-        else:
-            self.pfs_client.finish_commit(commit)
+        return PachydermCommitAdapter(self.pfs_client, repo, branch=branch, parent_commit=parent_commit)
 
 
 def _to_timestamp(seconds: int, nanos: int) -> pd.Timestamp:
