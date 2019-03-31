@@ -1,10 +1,8 @@
 import os
-import io
 import time
 import json
 from datetime import datetime
-from typing import List, Callable, Generator, Union, Optional
-from pathlib import Path
+from typing import List, Generator, Union, Optional, TypeVar, cast
 
 import pandas as pd
 from grpc._channel import _Rendezvous
@@ -29,6 +27,9 @@ from python_pachyderm.pfs_client import (
 )
 
 
+T = TypeVar('T')
+
+
 class PachydermException(Exception):
 
     def __init__(self, message: str, code=None):
@@ -41,7 +42,7 @@ class PachydermException(Exception):
             self.status = None
 
 
-def retry(f: Callable):
+def retry(f: T) -> T:
     def retry_wrapper(self, *args, **kwargs):
         try:
             return f(self, *args, **kwargs)
@@ -53,7 +54,7 @@ def retry(f: Callable):
             raise PachydermException(e.details(), e.code())
         else:
             self._retries = 0
-    return retry_wrapper
+    return cast(T, retry_wrapper)
 
 
 class PachydermCommitAdapter:
@@ -124,38 +125,9 @@ class PachydermCommitAdapter:
         self.pfs_client.delete_commit(self._commit)
         self._finished = True
 
-    def put_file(self, file: Union[str, Path, io.IOBase], path: Optional[str] = None,
-                 delimiter: str = 'none', target_file_datums: int = 0, target_file_bytes: int = 0) -> None:
-        """Uploads a file or the content of a file-like to the given `path` in PFS.
-
-        Args:
-            file: A local file path or a file-like object.
-            path: PFS path to upload file to. Defaults to the root directory.
-                If `path` is a directory (ends with /), the basename of `file` will be appended.
-                If `file` is a file-like object, `path` needs to be the full PFS path including filename.
-            delimiter: Causes data to be broken up into separate files with `path` as a prefix.
-                Possible values are 'none' (default), 'json', 'line', 'sql' and 'csv'.
-            target_file_datum: Specifies the target number of datums in each written file.
-                It may be lower if data does not split evenly, but will never be higher, unless the value is 0 (default).
-            target_file_bytes: Specifies the target number of bytes in each written file.
-                Files may have more or fewer bytes than the target.
-        """
-        self._raise_if_finished()
-        if isinstance(file, io.IOBase):
-            if path is None or path.endswith('/'):
-                raise ValueError('path needs to be specified (including filename)')
-            self.put_value(file.read(), path, delimiter=delimiter, target_file_datums=target_file_datums, target_file_bytes=target_file_bytes)  # type: ignore
-        else:
-            if path is None:
-                path = '/'
-            if path.endswith('/'):
-                path = path + os.path.basename(file)
-            with open(Path(file).expanduser().resolve(), 'rb') as f:
-                self.put_value(f.read(), path, delimiter=delimiter, target_file_datums=target_file_datums, target_file_bytes=target_file_bytes)
-
     @retry
-    def put_value(self, value: Union[str, bytes], path: str, encoding: str = 'utf-8',
-                  delimiter: Optional[str] = None, target_file_datums: int = 0, target_file_bytes: int = 0) -> None:
+    def put_file_bytes(self, value: Union[str, bytes], path: str, encoding: str = 'utf-8',
+                       delimiter: Optional[str] = None, target_file_datums: int = 0, target_file_bytes: int = 0) -> None:
         """Uploads a string or bytes `value` to a file in the given `path` in PFS.
 
         Args:
@@ -205,6 +177,10 @@ class PachydermCommitAdapter:
         """
         self._raise_if_finished()
         self.pfs_client.delete_file(self._commit, path)
+
+    @retry
+    def list_file_paths(self, glob: str) -> List[str]:
+        return [str(f.file.path) for f in self.pfs_client.stub.GlobFileStream(GlobFileRequest(commit=self._commit, pattern=glob))]
 
     def _raise_if_finished(self):
         if self.finished:
@@ -656,25 +632,6 @@ class PachydermAdapter:
             self.pfs_client.finish_commit(commit)
         else:
             raise NotImplementedError
-
-    def commit(self, repo: str, branch: Optional[str] = 'master', parent_commit: Optional[str] = None) -> PachydermCommitAdapter:
-        """Returns a context manager for commits.
-
-        The context manager automatically starts and finishes a commit.
-        If an exception occurs, the started commit is not finished, but deleted.
-
-        Args:
-            repo: Name of repository.
-            branch: Branch in repository. When the commit is started on a branch, the previous head of the branch is
-                    used as the parent of the commit. You may pass `None` in which case the new commit will have
-                    no parent (unless `parent_commit` is specified) and will initially appear empty.
-            parent_commit: ID of parent commit. Upon creation the new commit will appear identical to the parent commit.
-                Data can safely be added to the new commit without affecting the contents of the parent commit.
-
-        Returns:
-            Commit adapter object allowing operations inside the commit.
-        """
-        return PachydermCommitAdapter(self.pfs_client, repo, branch=branch, parent_commit=parent_commit)
 
 
 def _to_timestamp(seconds: int, nanos: int) -> pd.Timestamp:

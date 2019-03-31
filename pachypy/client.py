@@ -3,6 +3,7 @@ __all__ = [
 ]
 
 import os
+import io
 import re
 import yaml
 import logging
@@ -11,12 +12,12 @@ from pathlib import Path
 from fnmatch import fnmatch
 from datetime import datetime
 from collections import namedtuple
-from typing import List, Tuple, Set, Iterable, Callable, Union, Optional
+from typing import List, Tuple, Iterable, Callable, Union, Optional
 
 import pandas as pd
 from tzlocal import get_localzone
 
-from .adapter import PachydermAdapter, PachydermException
+from .adapter import PachydermAdapter, PachydermCommitAdapter, PachydermException
 from .registry import DockerRegistryAdapter, AmazonECRAdapter, GCRAdapter
 
 
@@ -31,6 +32,76 @@ class PachydermClientException(PachydermException):
         super().__init__(message)
 
 
+class PachydermCommit(PachydermCommitAdapter):
+
+    def put_file(self, file: Union[str, Path, io.IOBase], path: Optional[str] = None,
+                 delimiter: str = 'none', target_file_datums: int = 0, target_file_bytes: int = 0) -> None:
+        """Uploads a file or the content of a file-like to the given `path` in PFS.
+
+        Args:
+            file: A local file path or a file-like object.
+            path: PFS path to upload file to. Defaults to the root directory.
+                If `path` ends with a slash (/), the basename of `file` will be appended.
+                If `file` is a file-like object, `path` needs to be the full PFS path including filename.
+            delimiter: Causes data to be broken up into separate files with `path` as a prefix.
+                Possible values are 'none' (default), 'json', 'line', 'sql' and 'csv'.
+            target_file_datum: Specifies the target number of datums in each written file.
+                It may be lower if data does not split evenly, but will never be higher, unless the value is 0 (default).
+            target_file_bytes: Specifies the target number of bytes in each written file.
+                Files may have more or fewer bytes than the target.
+        """
+        if isinstance(file, io.IOBase):
+            if path is None or path.endswith('/'):
+                raise ValueError('path needs to be specified (including filename)')
+            self.put_file_bytes(file.read(), path, delimiter=delimiter, target_file_datums=target_file_datums, target_file_bytes=target_file_bytes)  # type: ignore
+        else:
+            if path is None:
+                path = '/'
+            if path.endswith('/'):
+                path = path + os.path.basename(file)
+            with open(Path(file).expanduser().resolve(), 'rb') as f:
+                self.put_file_bytes(f.read(), path, delimiter=delimiter, target_file_datums=target_file_datums, target_file_bytes=target_file_bytes)
+
+    def put_files(self, files: FileGlob, path: str = '/') -> List[str]:
+        """Uploads one or multiple files defined by `files` to the given `path` in PFS.
+
+        Directory structure is not maintained. All files are uploaded into the same directory.
+
+        Args:
+            files: Glob pattern(s) to files that should be uploaded.
+            path: PFS path to upload files to. Must be a directory.
+                Will be created if it doesn't exist. Defaults to the root directory.
+
+        Returns:
+            Local paths of uploaded files.
+        """
+        files = _expand_files(files)
+        for file in files:
+            file_path = os.path.join(path, os.path.basename(file))
+            self.put_file(file, file_path)
+        return files
+
+    def delete_files(self, glob: str) -> List[str]:
+        """Deletes all files matching `glob` in the current commit.
+
+        Args:
+            glob: Glob pattern to filter files to delete.
+
+        Returns:
+            PFS paths of deleted files.
+        """
+        files = self.list_file_paths(glob)
+        for path in files:
+            self.delete_file(path)
+        return files
+
+    def __str__(self) -> str:
+        return self.commit or ''
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}('{self.commit or ''}')"
+
+
 class PachydermClient:
 
     """Pachyderm client aiming to make interaction with a Pachyderm cluster more efficient and user-friendly.
@@ -40,7 +111,7 @@ class PachydermClient:
         port: Port on which pachd is listening (usually 30650).
         update_image_digests: Whether to update the image field in pipeline specs with the latest image digest
             to force Kubernetes to pull the latest version from the container registry.
-        pipeline_spec_files: Glob pattern or list of file paths to pipeline specs in YAML format.
+        pipeline_spec_files: Glob pattern(s) to pipeline spec files in YAML format.
         pipeline_spec_transformer: Function that takes a pipeline spec as dictionary as the only argument
             and returns a transformed pipeline spec.
     """
@@ -73,14 +144,8 @@ class PachydermClient:
         return self._logger
 
     @property
-    def pipeline_spec_files(self) -> Set[str]:
-        if self._pipeline_spec_files is None:
-            return set()
-        else:
-            files = self._pipeline_spec_files
-            if isinstance(files, str) or isinstance(files, Path):
-                files = [files]
-            return set.union(*[set(glob(os.path.expanduser(f))) for f in files])
+    def pipeline_spec_files(self) -> List[str]:
+        return _expand_files(self._pipeline_spec_files)
 
     @pipeline_spec_files.setter
     def pipeline_spec_files(self, files: FileGlob):
@@ -371,6 +436,25 @@ class PachydermClient:
         """
         self.adapter.commit_timestamp_file(repo=f'{pipeline}_{input_name}')
 
+    def commit(self, repo: str, branch: Optional[str] = 'master', parent_commit: Optional[str] = None) -> PachydermCommit:
+        """Returns a context manager for commits.
+
+        The context manager automatically starts and finishes a commit.
+        If an exception occurs, the started commit is not finished, but deleted.
+
+        Args:
+            repo: Name of repository.
+            branch: Branch in repository. When the commit is started on a branch, the previous head of the branch is
+                    used as the parent of the commit. You may pass `None` in which case the new commit will have
+                    no parent (unless `parent_commit` is specified) and will initially appear empty.
+            parent_commit: ID of parent commit. Upon creation the new commit will appear identical to the parent commit.
+                Data can safely be added to the new commit without affecting the contents of the parent commit.
+
+        Returns:
+            Commit object allowing operations inside the commit.
+        """
+        return PachydermCommit(self.adapter.pfs_client, repo, branch=branch, parent_commit=parent_commit)
+
     def read_pipeline_specs(self, pipelines: WildcardFilter = '*') -> List[dict]:
         """Read pipelines specs from files.
 
@@ -385,10 +469,10 @@ class PachydermClient:
         """
         # Subset list of files
         files = self.pipeline_spec_files
-        files_subset = {
+        files_subset = [
             f for f in files
             if _wildcard_match(os.path.basename(f), pipelines) or (isinstance(pipelines, str) and pipelines.startswith(os.path.splitext(os.path.basename(f))[0]))
-        }
+        ]
         files = files_subset if len(files_subset) > 0 else files
 
         # Read pipeline specs from files
@@ -493,13 +577,13 @@ class PachydermClient:
             pipeline = pipeline_spec['pipeline']['name']
             if pipeline in existing_pipelines and not recreate:
                 if update:
-                    self.adapter.update_pipeline(pipeline_specs, reprocess=reprocess)
+                    self.adapter.update_pipeline(pipeline_spec, reprocess=reprocess)
                     updated_pipelines.append(pipeline)
                     self.logger.info(f'Updated pipeline {pipeline}')
                 else:
                     self.logger.warning(f'Pipeline {pipeline} already exists')
             else:
-                self.adapter.create_pipeline(pipeline_specs)
+                self.adapter.create_pipeline(pipeline_spec)
                 created_pipelines.append(pipeline)
                 self.logger.info(f'Created pipeline {pipeline}')
 
@@ -510,6 +594,9 @@ class PachydermClient:
 
     def _list_repo_names(self, match: WildcardFilter = None) -> List[str]:
         return _wildcard_filter(self.adapter.list_repo_names(), match)
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}('{self.adapter.host}:{self.adapter.port}')"
 
 
 def _wildcard_filter(x: Iterable[str], pattern: WildcardFilter) -> List[str]:
@@ -539,3 +626,11 @@ def _split_image_string(image: str) -> Tuple[str, Optional[str], Optional[str]]:
     tag = image_s2[1] if len(image_s2) > 1 else None
     digest = image_s1[1] if len(image_s1) > 1 else None
     return (repository, tag, digest)
+
+
+def _expand_files(files: FileGlob) -> List[str]:
+    if not files:
+        return []
+    if isinstance(files, str) or isinstance(files, Path):
+        files = [files]
+    return sorted(list(set.union(*[set(glob(os.path.expanduser(f))) for f in files])))
