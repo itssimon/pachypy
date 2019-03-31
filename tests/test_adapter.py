@@ -3,7 +3,7 @@ import time
 import pytest
 from unittest import mock
 
-from pachypy.adapter import PachydermAdapter, PachydermException
+from pachypy.adapter import PachydermAdapter, PachydermCommitAdapter, PachydermException
 
 
 @pytest.fixture(scope='module')
@@ -274,47 +274,43 @@ def test_commit_adapter(adapter: PachydermAdapter):
     delete_repo_if_exists(adapter, repo_name)
     adapter.create_repo(repo_name)
 
-    commit = adapter.commit(repo_name)
-    assert commit.commit is None and commit.finished is False
-    with commit:
+    c = PachydermCommitAdapter(adapter.pfs_client, repo_name)
+    assert c.commit is None and c.finished is False
+    with c:
         pass
-    assert commit.commit is not None and commit.finished is True
+    assert c.commit is not None and c.finished is True
     assert len(adapter.list_commits(repo_name)) == 1
     with pytest.raises(PachydermException):
-        with commit:
+        with c:
             pass
     assert len(adapter.list_commits(repo_name)) == 1
 
     with pytest.raises(OSError):
-        with adapter.commit(repo_name) as commit:
+        with PachydermCommitAdapter(adapter.pfs_client, repo_name) as c:
             raise OSError
     assert len(adapter.list_commits(repo_name)) == 1
 
-    mock_file = lambda fn: os.path.join(os.path.dirname(__file__), 'mock', fn)
-    with adapter.commit(repo_name) as commit:
-        commit.put_file(mock_file('list_commits.csv'))
-        commit.put_file(mock_file('list_datums.csv'))
-        with open(mock_file('list_files.csv')) as f:
-            commit.put_file(f, 'folder/list_files.csv')
-        commit.put_value('test', 'test')
-        commit.delete_file('list_datums.csv')
-    files = adapter.list_files(repo_name, commit=commit.commit)
+    with PachydermCommitAdapter(adapter.pfs_client, repo_name) as c:
+        c.put_file_bytes('test_1', '/test_file_1')
+        c.put_file_bytes('test_2', '/folder/test_file_2')
+        c.put_file_bytes(b'test_3', 'test_file_3')
+        c.put_file_bytes(b'test_4', 'test_file_4')
+        assert set(c.list_file_paths('test*')) == {'/test_file_1', '/test_file_3', '/test_file_4'}
+        c.delete_file('test_file_4')
+        assert set(c.list_file_paths('test*')) == {'/test_file_1', '/test_file_3'}
+        assert len(c.list_file_paths('**')) == 4
+    files = adapter.list_files(repo_name, commit=c.commit)
     assert len(files) == 4
-    assert '/list_commits.csv' in set(files.path)
-    assert '/folder/list_files.csv' in set(files.path)
-    assert '/test' in set(files.path)
-    assert '/list_datums.csv' not in set(files.path)
+    assert '/test_file_1' in set(files.path)
+    assert '/folder/test_file_2' in set(files.path)
+    assert '/test_file_3' in set(files.path)
+    assert '/test_file_4' not in set(files.path)
 
-    with adapter.commit(repo_name, branch=None) as commit:
-        commit.put_file_url('https://raw.githubusercontent.com/itssimon/pachypy/master/tests/mock/get_logs.csv', 'get_logs.csv')
-    files = adapter.list_files(repo_name, commit=commit.commit)
+    with PachydermCommitAdapter(adapter.pfs_client, repo_name, branch=None) as c:
+        c.put_file_url('https://raw.githubusercontent.com/itssimon/pachypy/master/tests/mock/get_logs.csv', 'get_logs.csv')
+    files = adapter.list_files(repo_name, commit=c.commit)
     assert len(files) == 1
     assert '/get_logs.csv' in set(files.path)
-
-    with pytest.raises(ValueError):
-        with adapter.commit(repo_name) as commit:
-            with open(mock_file('list_jobs.csv')) as f:
-                commit.put_file(f)
 
     adapter.delete_repo(repo_name)
 
