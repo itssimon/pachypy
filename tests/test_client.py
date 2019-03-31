@@ -4,6 +4,8 @@ import pytest
 import pandas as pd
 from unittest.mock import patch, MagicMock, DEFAULT
 
+from pachypy.client import PachydermClient, PachydermClientException
+
 
 def get_mock_from_csv(file, datetime_cols=None, timedelta_cols=None, json_cols=None):
     file_path = os.path.join(os.path.dirname(__file__), 'mock', file)
@@ -68,7 +70,6 @@ def pipeline_spec_files_path():
 
 @pytest.fixture(scope='function')
 def client(pipeline_spec_files_path):
-    from pachypy.client import PachydermClient
     return PachydermClient(
         pipeline_spec_files=os.path.join(pipeline_spec_files_path, '*.yaml'),
         update_image_digests=False
@@ -93,7 +94,6 @@ def test_list_repos(client, **mocks):
 
 @patch_adapter()
 def test_list_commits(client, **mocks):
-    from pachypy.client import PachydermClientException
     del mocks
     df = client.list_commits('test_x_pipeline_*')
     assert len(df) == 10
@@ -104,7 +104,6 @@ def test_list_commits(client, **mocks):
 
 @patch_adapter()
 def test_list_files(client, **mocks):
-    from pachypy.client import PachydermClientException
     del mocks
     df = client.list_files('test_x_pipeline_*', files_only=True)
     assert len(df) == 7
@@ -129,7 +128,6 @@ def test_list_pipelines(client, **mocks):
 
 @patch_adapter()
 def test_list_jobs(client, **mocks):
-    from pachypy.client import PachydermClientException
     del mocks
     df = client.list_jobs()
     assert len(df) == 8
@@ -155,7 +153,6 @@ def test_list_datums(client, **mocks):
 
 @patch_adapter()
 def test_get_logs(client, **mocks):
-    from pachypy.client import PachydermClientException
     del mocks
     assert len(client.get_logs('test_x_pipeline_5')) == 10
     assert len(client.get_logs('test_x_pipeline_5', user_only=True)) == 7
