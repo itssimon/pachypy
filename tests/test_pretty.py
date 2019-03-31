@@ -30,39 +30,6 @@ def test_style_job_progress():
     assert _style_job_progress(pd.Series(['100% | 1 + 1 / 2']))[0] == ''
 
 
-def _format_pipeline_state():
-    from pachypy.pretty import _format_pipeline_state
-    icon = ' class="fa'
-    assert icon in _format_pipeline_state('starting')
-    assert icon in _format_pipeline_state('restarting')
-    assert icon in _format_pipeline_state('running')
-    assert icon in _format_pipeline_state('job running')
-    assert icon in _format_pipeline_state('failure')
-    assert icon in _format_pipeline_state('paused')
-    assert icon in _format_pipeline_state('standby')
-
-
-def test_format_job_state():
-    from pachypy.pretty import _format_job_state
-    icon = ' class="fa'
-    assert icon in _format_job_state('unknown')
-    assert icon in _format_job_state('starting')
-    assert icon in _format_job_state('running')
-    assert icon in _format_job_state('success')
-    assert icon in _format_job_state('failure')
-    assert icon in _format_job_state('killed')
-
-
-def test_format_datum_state():
-    from pachypy.pretty import _format_datum_state
-    icon = ' class="fa'
-    assert icon in _format_datum_state('unknown')
-    assert icon in _format_datum_state('starting')
-    assert icon in _format_datum_state('skipped')
-    assert icon in _format_datum_state('success')
-    assert icon in _format_datum_state('failed')
-
-
 def test_format_datetime():
     from datetime import datetime
     from dateutil.relativedelta import relativedelta as rd
