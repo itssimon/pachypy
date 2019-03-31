@@ -74,54 +74,100 @@ def retry_generator(f: Callable):
 
 class PachydermCommitAdapter:
 
-    def __init__(self, pfs_client, commit):
+    """Adapter class handling a commit.
+
+    Objects of this class are typically created via :meth:`~pachypy.adapter.PachydermAdapter.commit`.
+
+    Args:
+        pfs_client: PFS client object.
+        commit: Commit object.
+    """
+
+    def __init__(self, pfs_client: PfsClient, commit: Commit):
         self.pfs_client = pfs_client
         self.commit = commit
-        self.max_retries = 1
-        self._retries = 0
 
-    def put_file(self, file: Union[str, io.IOBase], path: str = '/',
+    def put_file(self, file: Union[str, Path, io.IOBase], path: Optional[str] = None,
                  delimiter: str = 'none', target_file_datums: int = 0, target_file_bytes: int = 0) -> None:
-        kwargs = dict(delimiter=delimiter, target_file_datums=target_file_datums, target_file_bytes=target_file_bytes)
+        """Uploads a file or the content of a file-like to the given `path` in PFS.
+
+        Args:
+            file: A local file path or a file-like object.
+            path: PFS path to upload file to. Defaults to the root directory.
+                If `path` is a directory (ends with /), the basename of `file` will be appended.
+                If `file` is a file-like object, `path` needs to be the full PFS path including filename.
+            delimiter: Causes data to be broken up into separate files with `path` as a prefix.
+                Possible values are 'none' (default), 'json', 'line', 'sql' and 'csv'.
+            target_file_datum: Specifies the target number of datums in each written file.
+                It may be lower if data does not split evenly, but will never be higher, unless the value is 0 (default).
+            target_file_bytes: Specifies the target number of bytes in each written file.
+                Files may have more or fewer bytes than the target.
+        """
         if isinstance(file, io.IOBase):
-            if path is None:
-                raise ValueError('path needs to be specified')
-            self.put_value(file.read(), path, **kwargs)  # type: ignore
+            if path is None or path.endswith('/'):
+                raise ValueError('path needs to be specified (including filename)')
+            self.put_value(file.read(), path, delimiter=delimiter, target_file_datums=target_file_datums, target_file_bytes=target_file_bytes)  # type: ignore
         else:
             if path is None:
                 path = '/'
             if path.endswith('/'):
                 path = path + os.path.basename(file)
             with open(Path(file).expanduser().resolve(), 'rb') as f:
-                self.put_value(f.read(), path, **kwargs)  # type: ignore
+                self.put_value(f.read(), path, delimiter=delimiter, target_file_datums=target_file_datums, target_file_bytes=target_file_bytes)
 
     def put_value(self, value: Union[str, bytes], path: str, encoding: str = 'utf-8',
-                  delimiter: str = 'none', target_file_datums: int = 0, target_file_bytes: int = 0) -> None:
+                  delimiter: Optional[str] = None, target_file_datums: int = 0, target_file_bytes: int = 0) -> None:
+        """Uploads a string or bytes `value` to a file in the given `path` in PFS.
+
+        Args:
+            value: The value to upload. If a string is given, it will be encoded using `encoding` (default UTF-8).
+            path: PFS path to upload file to. Needs to be the full PFS path including filename.
+            delimiter: Causes data to be broken up into separate files with `path` as a prefix.
+                Possible values are 'none' (default), 'json', 'line', 'sql' and 'csv'.
+            target_file_datum: Specifies the target number of datums in each written file.
+                It may be lower if data does not split evenly, but will never be higher, unless the value is 0 (default).
+            target_file_bytes: Specifies the target number of bytes in each written file.
+                Files may have more or fewer bytes than the target.
+        """
         if isinstance(value, str):
             value = value.encode(encoding)
         delimiter = {
+            None: DELIMITER_NONE,
             'none': DELIMITER_NONE,
             'json': DELIMITER_JSON,
             'line': DELIMITER_LINE,
             'sql': DELIMITER_SQL,
             'csv': DELIMITER_CSV
-        }[delimiter.lower()]
+        }[delimiter.lower() if delimiter is not None else None]
         self.pfs_client.put_file_bytes(self.commit, path, value,
                                        delimiter=delimiter, target_file_datums=target_file_datums, target_file_bytes=target_file_bytes)
 
     def put_file_url(self, url: str, path: str, recursive: bool = False) -> None:
+        """Uploads a file using the content found at a URL.
+
+        The URL is sent to the server which performs the request.
+
+        Args:
+            url: The URL to download content from.
+            path: PFS path to upload file to. Needs to be the full PFS path including filename.
+            recursive: Allow recursive scraping of some URL types, e.g. on s3:// URLs.
+        """
         self.pfs_client.put_file_url(self.commit, path, url, recursive=recursive)
 
     def delete_file(self, path: str) -> None:
+        """Deletes the file found in a given `path` in PFS.
+
+        Args:
+            path: PFS path of file to delete.
+        """
         self.pfs_client.delete_file(self.commit, path)
 
 
 class PachydermAdapter:
 
-    """Client adapter class handling communication with Pachyderm.
+    """Adapter class handling communication with Pachyderm.
 
     It is effectively a wrapper around the python_pachyderm package.
-    This is the basis for the PachydermClient class and is not intended to be used directly.
 
     Args:
         host: Hostname or IP address to reach pachd. Attempts to get this from PACHD_ADDRESS or ``~/.pachyderm/config.json`` if not set.
@@ -565,7 +611,23 @@ class PachydermAdapter:
 
     @contextmanager
     @retry_generator
-    def commit(self, repo: str, branch: str = 'master', parent_commit: Optional[str] = None) -> Generator[PachydermCommitAdapter, None, None]:
+    def commit(self, repo: str, branch: Optional[str] = 'master', parent_commit: Optional[str] = None) -> Generator[PachydermCommitAdapter, None, None]:
+        """Context manager for commits.
+
+        Automatically starts and finishes a commit. If an exception occurs,
+        the started commit is deleted.
+
+        Args:
+            repo: Name of repo.
+            branch: Branch in repo. When the commit is started on a branch the previous head of the branch is
+                    used as the parent of the commit. You may pass None in which case the new commit will have
+                    no parent (unless parent_commit is specified) and will initially appear empty.
+            parent_commit: ID of parent commit. Upon creation the new commit will appear identical to the parent commit.
+                Data can safely be added to the new commit without affecting the contents of the parent commit.
+
+        Returns:
+            Commit adapter object allowing operations inside the commit.
+        """
         commit = self.pfs_client.start_commit(repo_name=repo, branch=branch, parent=parent_commit)
         try:
             yield PachydermCommitAdapter(self.pfs_client, commit)
