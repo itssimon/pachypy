@@ -63,6 +63,19 @@ def patch_adapter():
     )
 
 
+def patch_commit_adapter():
+    return patch.multiple(
+        'pachypy.adapter.PachydermCommitAdapter',
+        start=DEFAULT,
+        finish=DEFAULT,
+        delete=DEFAULT,
+        put_file_bytes=DEFAULT,
+        put_file_url=DEFAULT,
+        delete_file=DEFAULT,
+        list_file_paths=DEFAULT,
+    )
+
+
 @pytest.fixture(scope='module')
 def pipeline_spec_files_path():
     return os.path.join(os.path.dirname(__file__), 'pipelines')
@@ -181,14 +194,38 @@ def test_create_delete_repos(client, **mocks):
         assert client.delete_repos(repos) == repos
 
 
-def test_pipeline_spec_files(client, pipeline_spec_files_path):
-    assert len(client.pipeline_spec_files) == 2
-    client.pipeline_spec_files = [os.path.join(pipeline_spec_files_path, 'test_a.yaml')]
-    assert len(client.pipeline_spec_files) == 1
-    client.pipeline_spec_files = [os.path.join(pipeline_spec_files_path, 'te*.yaml'), os.path.join(pipeline_spec_files_path, 't*.yaml')]
-    assert len(client.pipeline_spec_files) == 2
-    client.pipeline_spec_files = None
-    assert len(client.pipeline_spec_files) == 0
+@patch_commit_adapter()
+def test_commit_put_files(client, **mocks):
+    mock_file = lambda f: os.path.join(os.path.dirname(__file__), 'mock', f)
+    with client.commit('test_repo_3') as c:
+        c.put_file(mock_file('list_commits.csv'))
+        mocks['put_file_bytes'].assert_called_once()
+        assert mocks['put_file_bytes'].call_args[0][1] == '/list_commits.csv'
+        c.put_file(mock_file('list_files.csv'), path='/folder/')
+        assert mocks['put_file_bytes'].call_args[0][1] == '/folder/list_files.csv'
+        c.put_file(mock_file('list_files.csv'), path='/list_files_2.csv')
+        assert mocks['put_file_bytes'].call_args[0][1] == '/list_files_2.csv'
+        mocks['put_file_bytes'].reset_mock()
+
+        with pytest.raises(ValueError):
+            with open(mock_file('list_commits.csv')) as f:
+                c.put_file(f)
+        with open(mock_file('list_commits.csv')) as f:
+            c.put_file(f, path='list_commits.csv')
+        mocks['put_file_bytes'].assert_called_once()
+        assert mocks['put_file_bytes'].call_args[0][1] == 'list_commits.csv'
+        mocks['put_file_bytes'].reset_mock()
+
+        c.put_files(mock_file('*.csv'))
+        assert mocks['put_file_bytes'].call_count == 7
+
+
+@patch_commit_adapter()
+def test_commit_delete_files(client, **mocks):
+    mocks['list_file_paths'].return_value = ['/test_file_1', '/test_file_2']
+    with client.commit('test_repo_3') as c:
+        c.delete_files('test_file_*')
+        assert mocks['delete_file'].call_count == 2
 
 
 def test_read_pipeline_specs(client):
@@ -251,13 +288,6 @@ def test_update_image_digest(client):
             assert client.update_image_digest(image) == image
 
 
-def test_split_image_string():
-    from pachypy.client import _split_image_string
-    assert _split_image_string('a.b/c:d@sha1:e') == ('a.b/c', 'd', 'sha1:e')
-    assert _split_image_string('a.b/c:d') == ('a.b/c', 'd', None)
-    assert _split_image_string('a.b/c') == ('a.b/c', None, None)
-
-
 def test_wildcard_filter():
     from pachypy.client import _wildcard_filter, _wildcard_match
     x = ['a', 'ab', 'b']
@@ -272,3 +302,20 @@ def test_wildcard_filter():
     assert _wildcard_filter(x, [['a*'], 'b']) == x
     assert _wildcard_filter(x, ['*a', '*b']) == x
     assert _wildcard_filter(x, ['a', 'b']) == ['a', 'b']
+
+
+def test_split_image_string():
+    from pachypy.client import _split_image_string
+    assert _split_image_string('a.b/c:d@sha1:e') == ('a.b/c', 'd', 'sha1:e')
+    assert _split_image_string('a.b/c:d') == ('a.b/c', 'd', None)
+    assert _split_image_string('a.b/c') == ('a.b/c', None, None)
+
+
+def test_expand_files():
+    from pathlib import Path
+    from pachypy.client import _expand_files
+    mock_dir = lambda glob: os.path.join(os.path.dirname(__file__), 'mock', glob)
+    assert len(_expand_files(None)) == 0
+    assert len(_expand_files(mock_dir('*.csv'))) == 7
+    assert len(_expand_files(Path(mock_dir('*.csv')))) == 7
+    assert len(_expand_files([mock_dir('list_*.csv'), Path(mock_dir('get_*.csv'))])) == 7
