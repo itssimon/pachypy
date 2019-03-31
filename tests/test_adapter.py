@@ -275,12 +275,10 @@ def test_commit_adapter(adapter: PachydermAdapter):
     adapter.create_repo(repo_name)
 
     commit = adapter.commit(repo_name)
-    assert commit.commit is None
-    assert commit.finished is False
+    assert commit.commit is None and commit.finished is False
     with commit:
         pass
-    assert commit.commit is not None
-    assert commit.finished is True
+    assert commit.commit is not None and commit.finished is True
     assert len(adapter.list_commits(repo_name)) == 1
     with pytest.raises(PachydermException):
         with commit:
@@ -306,6 +304,19 @@ def test_commit_adapter(adapter: PachydermAdapter):
     assert '/folder/list_files.csv' in set(files.path)
     assert '/test' in set(files.path)
     assert '/list_datums.csv' not in set(files.path)
+
+    with adapter.commit(repo_name, branch=None) as commit:
+        commit.put_file_url('https://raw.githubusercontent.com/itssimon/pachypy/master/tests/mock/get_logs.csv', 'get_logs.csv')
+    files = adapter.list_files(repo_name, commit=commit.commit)
+    assert len(files) == 1
+    assert '/get_logs.csv' in set(files.path)
+
+    with pytest.raises(ValueError):
+        with adapter.commit(repo_name) as commit:
+            with open(mock_file('list_jobs.csv')) as f:
+                commit.put_file(f)
+
+    adapter.delete_repo(repo_name)
 
 
 def test_list_job_get_logs(adapter: PachydermAdapter, pipeline_spec_2):
