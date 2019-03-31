@@ -1,8 +1,11 @@
 import os
+import io
 import time
 import json
 from datetime import datetime
-from typing import Optional, List, Callable, Generator
+from typing import List, Callable, Generator, Union, Optional
+from contextlib import contextmanager
+from pathlib import Path
 
 import pandas as pd
 from grpc._channel import _Rendezvous
@@ -17,12 +20,13 @@ from python_pachyderm.client.pfs.pfs_pb2 import (
     GlobFileRequest, ListCommitRequest
 )
 from python_pachyderm.pps_client import (
-    FAILED, SUCCESS, SKIPPED, STARTING,
+    FAILED as DATUM_FAILED, SUCCESS as DATUM_SUCCESS, SKIPPED as DATUM_SKIPPED, STARTING as DATUM_STARTING,
     JOB_STARTING, JOB_RUNNING, JOB_FAILURE, JOB_SUCCESS, JOB_KILLED,
     PIPELINE_STARTING, PIPELINE_RUNNING, PIPELINE_RESTARTING, PIPELINE_FAILURE, PIPELINE_PAUSED, PIPELINE_STANDBY
 )
 from python_pachyderm.pfs_client import (
-    RESERVED, FILE, DIR
+    RESERVED as FILETYPE_RESERVED, FILE as FILETYPE_FILE, DIR as FILETYPE_DIR,
+    NONE as DELIMITER_NONE, JSON as DELIMITER_JSON, LINE as DELIMITER_LINE, SQL as DELIMITER_SQL, CSV as DELIMITER_CSV
 )
 
 
@@ -34,7 +38,8 @@ class PachydermException(Exception):
             self.status_code = code.value[0]
             self.status = code.value[1]
         except (AttributeError, KeyError):
-            pass
+            self.status_code = None
+            self.status = None
 
 
 def retry(f: Callable):
@@ -50,6 +55,65 @@ def retry(f: Callable):
         else:
             self._retries = 0
     return retry_wrapper
+
+
+def retry_generator(f: Callable):
+    def retry_wrapper(self, *args, **kwargs):
+        try:
+            yield from f(self, *args, **kwargs)
+        except _Rendezvous as e:
+            if e.code().value[1] == 'unavailable' and self._retries < self.max_retries:
+                if self.check_connectivity():
+                    self._retries += 1
+                    yield from retry_wrapper(self, *args, **kwargs)
+            raise PachydermException(e.details(), e.code())
+        else:
+            self._retries = 0
+    return retry_wrapper
+
+
+class PachydermCommitAdapter:
+
+    def __init__(self, pfs_client, commit):
+        self.pfs_client = pfs_client
+        self.commit = commit
+        self.max_retries = 1
+        self._retries = 0
+
+    def put_file(self, file: Union[str, io.IOBase], path: str = '/',
+                 delimiter: str = 'none', target_file_datums: int = 0, target_file_bytes: int = 0) -> None:
+        kwargs = dict(delimiter=delimiter, target_file_datums=target_file_datums, target_file_bytes=target_file_bytes)
+        if isinstance(file, io.IOBase):
+            if path is None:
+                raise ValueError('path needs to be specified')
+            self.put_value(file.read(), path, **kwargs)  # type: ignore
+        else:
+            if path is None:
+                path = '/'
+            if path.endswith('/'):
+                path = path + os.path.basename(file)
+            with open(Path(file).expanduser().resolve(), 'rb') as f:
+                self.put_value(f.read(), path, **kwargs)  # type: ignore
+
+    def put_value(self, value: Union[str, bytes], path: str, encoding: str = 'utf-8',
+                  delimiter: str = 'none', target_file_datums: int = 0, target_file_bytes: int = 0) -> None:
+        if isinstance(value, str):
+            value = value.encode(encoding)
+        delimiter = {
+            'none': DELIMITER_NONE,
+            'json': DELIMITER_JSON,
+            'line': DELIMITER_LINE,
+            'sql': DELIMITER_SQL,
+            'csv': DELIMITER_CSV
+        }[delimiter.lower()]
+        self.pfs_client.put_file_bytes(self.commit, path, value,
+                                       delimiter=delimiter, target_file_datums=target_file_datums, target_file_bytes=target_file_bytes)
+
+    def put_file_url(self, url: str, path: str, recursive: bool = False) -> None:
+        self.pfs_client.put_file_url(self.commit, path, url, recursive=recursive)
+
+    def delete_file(self, path: str) -> None:
+        self.pfs_client.delete_file(self.commit, path)
 
 
 class PachydermAdapter:
@@ -185,9 +249,9 @@ class PachydermAdapter:
             glob: Glob pattern to filter files returned.
         """
         file_type_mapping = {
-            RESERVED: 'reserved',
-            FILE: 'file',
-            DIR: 'dir',
+            FILETYPE_RESERVED: 'reserved',
+            FILETYPE_FILE: 'file',
+            FILETYPE_DIR: 'dir',
         }
         res = []
         if commit is None:
@@ -359,15 +423,15 @@ class PachydermAdapter:
             job: Job ID to list datums for.
         """
         state_mapping = {
-            FAILED: 'failed',
-            SUCCESS: 'success',
-            SKIPPED: 'skipped',
-            STARTING: 'starting',
+            DATUM_FAILED: 'failed',
+            DATUM_SUCCESS: 'success',
+            DATUM_SKIPPED: 'skipped',
+            DATUM_STARTING: 'starting',
         }
         file_type_mapping = {
-            RESERVED: 'reserved',
-            FILE: 'file',
-            DIR: 'dir',
+            FILETYPE_RESERVED: 'reserved',
+            FILETYPE_FILE: 'file',
+            FILETYPE_DIR: 'dir',
         }
         res = []
         for datum in self.pps_client.stub.ListDatumStream(ListDatumRequest(job=Job(id=job))):
@@ -498,6 +562,18 @@ class PachydermAdapter:
             self.pfs_client.finish_commit(commit)
         else:
             raise NotImplementedError
+
+    @contextmanager
+    @retry_generator
+    def commit(self, repo: str, branch: str = 'master', parent_commit: Optional[str] = None) -> Generator[PachydermCommitAdapter, None, None]:
+        commit = self.pfs_client.start_commit(repo_name=repo, branch=branch, parent=parent_commit)
+        try:
+            yield PachydermCommitAdapter(self.pfs_client, commit)
+        except Exception as e:
+            self.pfs_client.delete_commit(commit)
+            raise e
+        else:
+            self.pfs_client.finish_commit(commit)
 
 
 def _to_timestamp(seconds: int, nanos: int) -> pd.Timestamp:
