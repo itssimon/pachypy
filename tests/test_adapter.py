@@ -3,10 +3,11 @@ import time
 import pytest
 from unittest import mock
 
+from pachypy.adapter import PachydermAdapter, PachydermException
+
 
 @pytest.fixture(scope='module')
-def adapter():
-    from pachypy.adapter import PachydermAdapter
+def adapter() -> PachydermAdapter:
     return PachydermAdapter()
 
 
@@ -99,28 +100,26 @@ def pipeline_spec_4():
     }
 
 
-def skip_if_pachyderm_unavailable(adapter):
+def skip_if_pachyderm_unavailable(adapter: PachydermAdapter):
     if not adapter.check_connectivity():
         pytest.skip('Pachyderm cluster is not available')
 
 
-def delete_pipeline_if_exists(adapter, pipeline_name):
-    from pachypy.adapter import PachydermException
+def delete_pipeline_if_exists(adapter: PachydermAdapter, pipeline_name):
     try:
         adapter.delete_pipeline(pipeline_name)
     except PachydermException:
         pass
 
 
-def delete_repo_if_exists(adapter, repo_name):
-    from pachypy.adapter import PachydermException
+def delete_repo_if_exists(adapter: PachydermAdapter, repo_name):
     try:
         adapter.delete_repo(repo_name)
     except PachydermException:
         pass
 
 
-def await_pipeline_new_state(adapter, pipeline_name, initial_state='starting', timeout=30):
+def await_pipeline_new_state(adapter: PachydermAdapter, pipeline_name, initial_state='starting', timeout=30):
     start_time = time.time()
     state = initial_state
     while state == initial_state and time.time() - start_time < timeout:
@@ -130,7 +129,7 @@ def await_pipeline_new_state(adapter, pipeline_name, initial_state='starting', t
     return state
 
 
-def await_job_completed_state(adapter, pipeline_name, timeout=300):
+def await_job_completed_state(adapter: PachydermAdapter, pipeline_name, timeout=300):
     start_time = time.time()
     state = 'starting'
     while state in {'unknown', 'starting', 'running'} and time.time() - start_time < timeout:
@@ -142,7 +141,6 @@ def await_job_completed_state(adapter, pipeline_name, timeout=300):
 
 
 def test_init():
-    from pachypy.adapter import PachydermAdapter
     adapter = PachydermAdapter(host='test_host')
     assert adapter.host == 'test_host' and adapter.port == 30650
     with mock.patch.dict(os.environ, {'PACHD_ADDRESS': 'test_host:12345'}):
@@ -151,21 +149,20 @@ def test_init():
 
 
 def test_check_connectivity():
-    from pachypy.adapter import PachydermAdapter
     adapter = PachydermAdapter(host='host_that_does_not_exist')
     assert adapter.check_connectivity() is False
     adapter = PachydermAdapter(host='google.com')
     assert adapter.check_connectivity() is False
 
 
-def test_list_repos(adapter):
+def test_list_repos(adapter: PachydermAdapter):
     skip_if_pachyderm_unavailable(adapter)
     df = adapter.list_repos()
     assert df.shape[1] == 4
     assert all([c in df.columns for c in ['repo', 'size_bytes', 'branches', 'created']])
 
 
-def test_list_pipelines(adapter, pipeline_spec_1, pipeline_spec_2, pipeline_spec_3, pipeline_spec_4):
+def test_list_pipelines(adapter: PachydermAdapter, pipeline_spec_1, pipeline_spec_2, pipeline_spec_3, pipeline_spec_4):
     skip_if_pachyderm_unavailable(adapter)
     pipeline_specs = [pipeline_spec_1, pipeline_spec_2, pipeline_spec_3, pipeline_spec_4]
     for pipeline_spec in pipeline_specs:
@@ -189,7 +186,7 @@ def test_list_pipelines(adapter, pipeline_spec_1, pipeline_spec_2, pipeline_spec
     assert df.loc[df['pipeline'] == 'test_pipeline_4', 'input'].iloc[0] == '(test_pipeline_1/test:* ⨯ test_pipeline_2/test:*)'
 
 
-def test_list_jobs(adapter):
+def test_list_jobs(adapter: PachydermAdapter):
     skip_if_pachyderm_unavailable(adapter)
     df = adapter.list_jobs()
     assert df.shape[1] == 15
@@ -225,7 +222,7 @@ def test_create_update_delete_pipeline(adapter, pipeline_spec_1):
     assert pipeline_name not in adapter.list_pipeline_names()
 
 
-def test_stop_start_pipeline(adapter, pipeline_spec_1):
+def test_stop_start_pipeline(adapter: PachydermAdapter, pipeline_spec_1):
     skip_if_pachyderm_unavailable(adapter)
     pipeline_name = pipeline_spec_1['pipeline']['name']
     delete_pipeline_if_exists(adapter, pipeline_name)
@@ -243,7 +240,7 @@ def test_stop_start_pipeline(adapter, pipeline_spec_1):
     assert pipeline_name not in set(adapter.list_pipelines().pipeline)
 
 
-def test_create_commit_delete_repo(adapter):
+def test_create_commit_delete_repo(adapter: PachydermAdapter):
     skip_if_pachyderm_unavailable(adapter)
     repo_name = 'test_repo_1'
     delete_repo_if_exists(adapter, repo_name)
@@ -271,7 +268,47 @@ def test_create_commit_delete_repo(adapter):
     assert repo_name not in set(adapter.list_repo_names())
 
 
-def test_list_job_get_logs(adapter, pipeline_spec_2):
+def test_commit_adapter(adapter: PachydermAdapter):
+    skip_if_pachyderm_unavailable(adapter)
+    repo_name = 'test_repo_2'
+    delete_repo_if_exists(adapter, repo_name)
+    adapter.create_repo(repo_name)
+
+    commit = adapter.commit(repo_name)
+    assert commit.commit is None
+    assert commit.finished is False
+    with commit:
+        pass
+    assert commit.commit is not None
+    assert commit.finished is True
+    assert len(adapter.list_commits(repo_name)) == 1
+    with pytest.raises(PachydermException):
+        with commit:
+            pass
+    assert len(adapter.list_commits(repo_name)) == 1
+
+    with pytest.raises(OSError):
+        with adapter.commit(repo_name) as commit:
+            raise OSError
+    assert len(adapter.list_commits(repo_name)) == 1
+
+    mock_file = lambda fn: os.path.join(os.path.dirname(__file__), 'mock', fn)
+    with adapter.commit(repo_name) as commit:
+        commit.put_file(mock_file('list_commits.csv'))
+        commit.put_file(mock_file('list_datums.csv'))
+        with open(mock_file('list_files.csv')) as f:
+            commit.put_file(f, 'folder/list_files.csv')
+        commit.put_value('test', 'test')
+        commit.delete_file('list_datums.csv')
+    files = adapter.list_files(repo_name, commit=commit.commit)
+    assert len(files) == 4
+    assert '/list_commits.csv' in set(files.path)
+    assert '/folder/list_files.csv' in set(files.path)
+    assert '/test' in set(files.path)
+    assert '/list_datums.csv' not in set(files.path)
+
+
+def test_list_job_get_logs(adapter: PachydermAdapter, pipeline_spec_2):
     skip_if_pachyderm_unavailable(adapter)
     pipeline_name = pipeline_spec_2['pipeline']['name']
     cron_input_name = pipeline_spec_2['input']['cron']['name']
@@ -305,7 +342,6 @@ def test_list_job_get_logs(adapter, pipeline_spec_2):
     assert pipeline_name not in set(adapter.list_pipelines().pipeline)
 
 
-def test_delete_pipeline_exception(adapter):
-    from pachypy.adapter import PachydermException
+def test_delete_pipeline_exception(adapter: PachydermAdapter):
     with pytest.raises(PachydermException):
         adapter.delete_pipeline('pipeline_that_does_not_exist')
