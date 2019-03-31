@@ -171,6 +171,7 @@ def test_get_logs(client, **mocks):
     assert len(client.get_logs('test_x_pipeline_5', user_only=True)) == 7
     assert len(client.get_logs('test_x_pipeline_5', last_job_only=False)) == 20
     assert len(client.get_logs('test_x_pipeline_5', user_only=True, last_job_only=False)) == 14
+    assert len(client.get_logs('test_x_pipeline_5', datum='e52eea8fb37eafbfa9d04257f41f1e403b156d63b8135cb179cf142b5f1a08d5', last_job_only=False)) == 10
     with pytest.raises(PachydermClientException):
         assert client.get_logs('pipeline_that_doesnt_exist')
 
