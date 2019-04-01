@@ -106,7 +106,7 @@ def test_list_files(pretty_client, **mocks):
     del mocks
     html = pretty_client.list_files('test_x_pipeline_3', files_only=False)
     assert 'use.fontawesome.com' in html.data
-    assert '<table' in html.data and html.data.count('<tr') == 11
+    assert '<table' in html.data and html.data.count('<tr') == 8
 
 
 @patch_adapter()

@@ -207,6 +207,9 @@ def test_create_update_delete_pipeline(adapter, pipeline_1):
     adapter.delete_pipeline(pipeline_name)
     assert pipeline_name not in adapter.list_pipeline_names()
 
+    with pytest.raises(PachydermException):
+        adapter.delete_pipeline('pipeline_that_does_not_exist')
+
 
 def test_list_pipelines(adapter: PachydermAdapter, pipeline_1, pipeline_2, pipeline_3, pipeline_4):
     skip_if_pachyderm_unavailable(adapter)
@@ -237,6 +240,13 @@ def test_stop_start_pipeline(adapter: PachydermAdapter, pipeline_1):
 
     adapter.start_pipeline(pipeline_name)
     assert await_pipeline_new_state(adapter, pipeline_name, initial_state='paused') == 'running'
+
+
+def test_commit_branches():
+    from pachypy.adapter import _commit_branches
+    assert _commit_branches({'a': '1'}) == {'1': ['a']}
+    assert _commit_branches({'a': '1', 'b': '1'}) == {'1': ['a', 'b']}
+    assert _commit_branches({'a': '1', 'b': '2'}) == {'1': ['a'], '2': ['b']}
 
 
 def test_commit_context_manager(adapter: PachydermAdapter, repo):
@@ -372,8 +382,3 @@ def test_list_jobs_get_logs(adapter: PachydermAdapter, pipeline_2):
     logs = logs[logs['user']]
     assert logs.shape == (1, 7)
     assert logs['message'].iloc[0] == 'test'
-
-
-def test_delete_pipeline_exception(adapter: PachydermAdapter):
-    with pytest.raises(PachydermException):
-        adapter.delete_pipeline('pipeline_that_does_not_exist')
