@@ -13,8 +13,8 @@ from python_pachyderm.client.pps.pps_pb2 import (
     CreatePipelineRequest, DeletePipelineRequest, StartPipelineRequest, StopPipelineRequest
 )
 from python_pachyderm.client.pfs.pfs_pb2 import (
-    Repo, Commit, Branch,
-    GlobFileRequest, ListCommitRequest, DeleteBranchRequest
+    Repo, Commit, Branch, File,
+    GlobFileRequest, GetFileRequest, ListCommitRequest, CreateBranchRequest, DeleteBranchRequest
 )
 from python_pachyderm.pps_client import (
     FAILED as DATUM_FAILED, SUCCESS as DATUM_SUCCESS, SKIPPED as DATUM_SKIPPED, STARTING as DATUM_STARTING,
@@ -177,6 +177,16 @@ class PachydermCommitAdapter:
         """
         self._raise_if_finished()
         self.pfs_client.delete_file(self._commit, path)
+
+    @retry
+    def create_branch(self, branch: str) -> None:
+        """Sets this commit as a branch.
+
+        Args:
+            branch: Name of the branch.
+        """
+        branch = Branch(repo=Repo(name=self.repo), name=branch)
+        self.pfs_client.stub.CreateBranch(CreateBranchRequest(head=self._commit, branch=branch))
 
     @retry
     def list_file_paths(self, glob: str) -> List[str]:
@@ -625,6 +635,20 @@ class PachydermAdapter:
         self.pfs_client.delete_commit(Commit(repo=Repo(name=repo), id=commit))
 
     @retry
+    def create_branch(self, repo: str, commit: str, branch: str) -> None:
+        """Sets a commit as a branch.
+
+        Args:
+            repo: Name of repository.
+            commit: ID of commit to set as branch.
+            branch: Name of the branch.
+        """
+        repo = Repo(name=repo)
+        commit = Commit(repo=repo, id=commit)
+        branch = Branch(repo=repo, name=branch)
+        self.pfs_client.stub.CreateBranch(CreateBranchRequest(head=commit, branch=branch))
+
+    @retry
     def delete_branch(self, repo: str, branch: str) -> None:
         """Deletes a branch, but leaves the commits intact.
 
@@ -635,6 +659,14 @@ class PachydermAdapter:
             branch: Name of branch to delete.
         """
         self.pfs_client.stub.DeleteBranch(DeleteBranchRequest(branch=Branch(repo=Repo(name=repo), name=branch)))
+
+    @retry
+    def get_file(self, repo: str, path: str, branch: Optional[str] = 'master', commit: Optional[str] = None) -> Generator[bytes, None, None]:
+        if commit is None and branch is not None:
+            commit = self.list_branch_heads(repo).get(branch)
+        response = self.pfs_client.stub.GetFile(GetFileRequest(file=File(commit=Commit(repo=Repo(name=repo), id=commit), path=path)))
+        for content in response:
+            yield content.value
 
     @retry
     def commit_timestamp_file(self, repo: str, branch: str = 'master', overwrite: bool = True) -> None:
