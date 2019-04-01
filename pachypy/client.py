@@ -357,6 +357,25 @@ class PachydermClient:
             self.logger.info(f'Deleted repo {repo}')
         return repos
 
+    def commit(self, repo: str, branch: Optional[str] = 'master', parent_commit: Optional[str] = None) -> PachydermCommit:
+        """Returns a context manager for a new commit.
+
+        The context manager automatically starts and finishes the commit.
+        If an exception occurs, the commit is not finished, but deleted.
+
+        Args:
+            repo: Name of repository.
+            branch: Branch in repository. When the commit is started on a branch, the previous head of the branch is
+                    used as the parent of the commit. You may pass `None` in which case the new commit will have
+                    no parent (unless `parent_commit` is specified) and will initially appear empty.
+            parent_commit: ID of parent commit. Upon creation the new commit will appear identical to the parent commit.
+                Data can safely be added to the new commit without affecting the contents of the parent commit.
+
+        Returns:
+            Commit object allowing operations inside the commit.
+        """
+        return PachydermCommit(self.adapter.pfs_client, repo, branch=branch, parent_commit=parent_commit)
+
     def delete_commit(self, repo: str, commit: str) -> None:
         """Deletes a commit.
 
@@ -365,6 +384,16 @@ class PachydermClient:
             commit: ID of commit to delete.
         """
         self.adapter.delete_commit(repo, commit)
+
+    def create_branch(self, repo: str, commit: str, branch: str) -> None:
+        """Sets a commit as a branch.
+
+        Args:
+            repo: Name of repository.
+            commit: ID of commit to set as branch.
+            branch: Name of the branch.
+        """
+        self.adapter.create_branch(repo, commit, branch)
 
     def delete_branch(self, repo: str, branch: str) -> None:
         """Deletes a branch, but leaves the commits intact.
@@ -466,25 +495,6 @@ class PachydermClient:
             input_name: Name of the cron input. Defaults to 'tick'.
         """
         self.adapter.commit_timestamp_file(repo=f'{pipeline}_{input_name}')
-
-    def commit(self, repo: str, branch: Optional[str] = 'master', parent_commit: Optional[str] = None) -> PachydermCommit:
-        """Returns a context manager for commits.
-
-        The context manager automatically starts and finishes a commit.
-        If an exception occurs, the started commit is not finished, but deleted.
-
-        Args:
-            repo: Name of repository.
-            branch: Branch in repository. When the commit is started on a branch, the previous head of the branch is
-                    used as the parent of the commit. You may pass `None` in which case the new commit will have
-                    no parent (unless `parent_commit` is specified) and will initially appear empty.
-            parent_commit: ID of parent commit. Upon creation the new commit will appear identical to the parent commit.
-                Data can safely be added to the new commit without affecting the contents of the parent commit.
-
-        Returns:
-            Commit object allowing operations inside the commit.
-        """
-        return PachydermCommit(self.adapter.pfs_client, repo, branch=branch, parent_commit=parent_commit)
 
     def read_pipeline_specs(self, pipelines: WildcardFilter = '*') -> List[dict]:
         """Read pipelines specs from files.
