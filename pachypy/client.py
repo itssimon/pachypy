@@ -205,14 +205,16 @@ class PachydermClient:
         if len(repo_names) == 0:
             raise PachydermClientException(f'No repos matching "{repos}" were found.')
         df = pd.concat([self.adapter.list_commits(repo=repo, n=n) for repo in repo_names])
-        return df.set_index(['repo', 'commit'])[['size_bytes', 'started', 'finished', 'parent_commit']]
+        return df.set_index(['repo', 'commit'])[['branches', 'size_bytes', 'started', 'finished', 'parent_commit']]
 
-    def list_files(self, repos: WildcardFilter, commit: str = None, glob: str = '**', files_only: bool = True) -> pd.DataFrame:
+    def list_files(self, repos: WildcardFilter, branch: Optional[str] = 'master', commit: Optional[str] = None,
+                   glob: str = '**', files_only: bool = True) -> pd.DataFrame:
         """Get list of files as pandas DataFrame.
 
         Args:
             repos: Name pattern to filter repos to return files for. Supports shell-style wildcards.
-            commit: Commit ID to return files for. Uses the latest commit per repo if not specified.
+            branch: Branch to list files for. Defaults to 'master'.
+            commit: Commit ID to return files for. Overrides `branch` if specified.
                 If specified, the repos parameter must only match the repo this commit ID belongs to.
             glob: Glob pattern to filter files returned.
             files_only: Whether to return only files or include directories.
@@ -222,10 +224,19 @@ class PachydermClient:
             raise PachydermClientException(f'No repos matching "{repos}" were found.')
         if commit is not None and len(repo_names) > 1:
             raise PachydermClientException(f'More than one repo matches "{repos}", but it must only match the repo of commit ID "{commit}".')
-        df = pd.concat([self.adapter.list_files(repo=repo, commit=commit, glob=glob) for repo in repo_names])
+        if branch is None and commit is None:
+            df = pd.concat([
+                self.adapter.list_files(repo=repo, branch=None, commit=branch_head, glob=glob)
+                for repo in repo_names for branch_head in self.adapter.list_branch_heads(repo).values()
+            ])
+        else:
+            df = pd.concat([
+                self.adapter.list_files(repo=repo, branch=branch, commit=commit, glob=glob)
+                for repo in repo_names
+            ])
         if files_only:
             df = df[df['type'] == 'file']
-        return df.set_index(['repo', 'path'])[['type', 'size_bytes', 'commit', 'committed']]
+        return df.set_index(['repo', 'path'])[['type', 'size_bytes', 'commit', 'branches', 'committed']]
 
     def list_pipelines(self, pipelines: WildcardFilter = '*') -> pd.DataFrame:
         """Get list of pipelines as pandas DataFrame.
@@ -345,6 +356,26 @@ class PachydermClient:
             self.adapter.delete_repo(repo)
             self.logger.info(f'Deleted repo {repo}')
         return repos
+
+    def delete_commit(self, repo: str, commit: str) -> None:
+        """Deletes a commit.
+
+        Args:
+            repo: Name of repository.
+            commit: ID of commit to delete.
+        """
+        self.adapter.delete_commit(repo, commit)
+
+    def delete_branch(self, repo: str, branch: str) -> None:
+        """Deletes a branch, but leaves the commits intact.
+
+        The commits can still be accessed via their commit IDs.
+
+        Args:
+            repo: Name of repository.
+            branch: Name of branch to delete.
+        """
+        self.adapter.delete_branch(repo, branch)
 
     def create_pipelines(self, pipelines: WildcardFilter = '*', pipeline_specs: Optional[List[dict]] = None,
                          recreate: bool = False) -> PipelineChanges:

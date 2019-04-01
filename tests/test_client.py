@@ -55,6 +55,8 @@ def patch_adapter():
         get_logs=mock_get_logs,
         create_repo=DEFAULT,
         delete_repo=DEFAULT,
+        delete_commit=DEFAULT,
+        delete_branch=DEFAULT,
         create_pipeline=DEFAULT,
         update_pipeline=DEFAULT,
         delete_pipeline=DEFAULT,

@@ -2,7 +2,7 @@ import os
 import time
 import json
 from datetime import datetime
-from typing import List, Generator, Union, Optional, TypeVar, cast
+from typing import List, Dict, Generator, Union, Optional, TypeVar, cast
 
 import pandas as pd
 from grpc._channel import _Rendezvous
@@ -13,8 +13,8 @@ from python_pachyderm.client.pps.pps_pb2 import (
     CreatePipelineRequest, DeletePipelineRequest, StartPipelineRequest, StopPipelineRequest
 )
 from python_pachyderm.client.pfs.pfs_pb2 import (
-    Repo, Commit,
-    GlobFileRequest, ListCommitRequest
+    Repo, Commit, Branch,
+    GlobFileRequest, ListCommitRequest, DeleteBranchRequest
 )
 from python_pachyderm.pps_client import (
     FAILED as DATUM_FAILED, SUCCESS as DATUM_SUCCESS, SKIPPED as DATUM_SKIPPED, STARTING as DATUM_STARTING,
@@ -273,6 +273,10 @@ class PachydermAdapter:
         return [r.repo.name for r in self.pfs_client.list_repo()]
 
     @retry
+    def list_branch_heads(self, repo: str) -> Dict[str, str]:
+        return {b.branch.name: b.head.id for b in self.pfs_client.list_branch(repo)}
+
+    @retry
     def list_commits(self, repo: str, n: int = 20) -> pd.DataFrame:
         """Returns list of commits.
 
@@ -281,11 +285,13 @@ class PachydermAdapter:
         """
         i = 1
         res = []
+        commit_branches = _commit_branches(self.list_branch_heads(repo))
         for commit in self.pfs_client.stub.ListCommitStream(ListCommitRequest(repo=Repo(name=repo))):
             res.append({
+                'repo': commit.commit.repo.name,
                 'commit': commit.commit.id,
                 'parent_commit': commit.parent_commit.id,
-                'repo': commit.commit.repo.name,
+                'branches': commit_branches.get(commit.commit.id, []),
                 'size_bytes': commit.size_bytes,
                 'started': _to_timestamp(commit.started.seconds, commit.started.nanos),
                 'finished': _to_timestamp(commit.finished.seconds, commit.finished.nanos),
@@ -293,29 +299,17 @@ class PachydermAdapter:
             i += 1
             if n is not None and i > n:
                 break
-        return pd.DataFrame(res, columns=['repo', 'commit', 'size_bytes', 'started', 'finished', 'parent_commit']) \
+        return pd.DataFrame(res, columns=['repo', 'commit', 'branches', 'size_bytes', 'started', 'finished', 'parent_commit']) \
             .astype({'size_bytes': 'int', 'started': 'datetime64[ns]', 'finished': 'datetime64[ns]'})
 
     @retry
-    def get_last_commit(self, repo: str) -> Optional[str]:
-        """Returns the ID of the last commit to a repo.
-
-        Args:
-            repo: Repo to get commit ID for.
-        """
-        try:
-            commit = next(self.pfs_client.stub.ListCommitStream(ListCommitRequest(repo=Repo(name=repo))))
-            return str(commit.commit.id)
-        except StopIteration:
-            return None
-
-    @retry
-    def list_files(self, repo: str, commit: str = None, glob: str = '**') -> pd.DataFrame:
+    def list_files(self, repo: str, branch: Optional[str] = 'master', commit: Optional[str] = None, glob: str = '**') -> pd.DataFrame:
         """Returns list of files.
 
         Args:
-            repo: Name of repo to list files from.
-            commit: Commit ID to list files from.
+            repo: Name of repo to list files for.
+            branch: Branch of repo to list files for.
+            commit: Commit ID to list files for. Overrides `branch` if specified.
             glob: Glob pattern to filter files returned.
         """
         file_type_mapping = {
@@ -324,20 +318,23 @@ class PachydermAdapter:
             FILETYPE_DIR: 'dir',
         }
         res = []
-        if commit is None:
-            commit = self.get_last_commit(repo)
+        branch_heads = self.list_branch_heads(repo)
+        commit_branches = _commit_branches(branch_heads)
+        if commit is None and branch is not None:
+            commit = branch_heads.get(branch)
         if commit is not None:
             commit = Commit(repo=Repo(name=repo), id=commit)
             for file in self.pfs_client.stub.GlobFileStream(GlobFileRequest(commit=commit, pattern=glob)):
                 res.append({
                     'repo': file.file.commit.repo.name,
                     'commit': file.file.commit.id,
+                    'branches': commit_branches.get(file.file.commit.id, []),
                     'path': file.file.path,
                     'type': file_type_mapping.get(file.file_type, 'unknown'),
                     'size_bytes': file.size_bytes,
                     'committed': _to_timestamp(file.committed.seconds, file.committed.nanos),
                 })
-        return pd.DataFrame(res, columns=['repo', 'commit', 'path', 'type', 'size_bytes', 'committed']) \
+        return pd.DataFrame(res, columns=['repo', 'commit', 'branches', 'path', 'type', 'size_bytes', 'committed']) \
             .astype({'size_bytes': 'int', 'committed': 'datetime64[ns]'})
 
     @retry
@@ -552,7 +549,7 @@ class PachydermAdapter:
 
     @retry
     def create_pipeline(self, pipeline_specs: dict) -> None:
-        """Create pipeline with given specs.
+        """Creates pipeline with given specs.
 
         Args:
             pipeline_specs: Pipeline specs.
@@ -561,7 +558,7 @@ class PachydermAdapter:
 
     @retry
     def update_pipeline(self, pipeline_specs: dict, reprocess: bool = False) -> None:
-        """Update existing pipeline with given specs.
+        """Updates existing pipeline with given specs.
 
         Args:
             pipeline_specs: Pipeline specs.
@@ -571,7 +568,7 @@ class PachydermAdapter:
 
     @retry
     def delete_pipeline(self, pipeline: str) -> None:
-        """Delete pipeline.
+        """Deletes a pipeline.
 
         Args:
             pipeline: Name of pipeline to delete.
@@ -580,7 +577,7 @@ class PachydermAdapter:
 
     @retry
     def start_pipeline(self, pipeline: str) -> None:
-        """Restart stopped pipeline.
+        """Restarts a stopped pipeline.
 
         Args:
             pipeline: Name of pipeline to start.
@@ -589,7 +586,7 @@ class PachydermAdapter:
 
     @retry
     def stop_pipeline(self, pipeline: str) -> None:
-        """Stop pipeline.
+        """Stops a running pipeline.
 
         Args:
             pipeline: Name of pipeline to stop.
@@ -598,7 +595,7 @@ class PachydermAdapter:
 
     @retry
     def create_repo(self, repo: str, description: Optional[str] = None) -> None:
-        """Create new repository in pfs.
+        """Creates a new repository in PFS.
 
         Args:
             repo: Name of new repository.
@@ -608,12 +605,34 @@ class PachydermAdapter:
 
     @retry
     def delete_repo(self, repo: str) -> None:
-        """Delete repository.
+        """Delete a repository in PFS.
 
         Args:
             repo: Name of repository to delete.
         """
         self.pfs_client.delete_repo(repo)
+
+    @retry
+    def delete_commit(self, repo: str, commit: str) -> None:
+        """Deletes a commit.
+
+        Args:
+            repo: Name of repository.
+            commit: ID of commit to delete.
+        """
+        self.pfs_client.delete_commit(Commit(repo=Repo(name=repo), id=commit))
+
+    @retry
+    def delete_branch(self, repo: str, branch: str) -> None:
+        """Deletes a branch, but leaves the commits intact.
+
+        The commits can still be accessed via their commit IDs.
+
+        Args:
+            repo: Name of repository.
+            branch: Name of branch to delete.
+        """
+        self.pfs_client.stub.DeleteBranch(DeleteBranchRequest(branch=Branch(repo=Repo(name=repo), name=branch)))
 
     @retry
     def commit_timestamp_file(self, repo: str, branch: str = 'master', overwrite: bool = True) -> None:
@@ -632,6 +651,16 @@ class PachydermAdapter:
             self.pfs_client.finish_commit(commit)
         else:
             raise NotImplementedError
+
+
+def _commit_branches(branch_heads: Dict[str, str]) -> Dict[str, List[str]]:
+    commit_branch: Dict[str, List[str]] = {}
+    for branch, head in branch_heads.items():
+        if head in commit_branch:
+            commit_branch[head].append(branch)
+        else:
+            commit_branch[head] = [branch]
+    return commit_branch
 
 
 def _to_timestamp(seconds: int, nanos: int) -> pd.Timestamp:

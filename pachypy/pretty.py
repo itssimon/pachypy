@@ -75,7 +75,7 @@ class PrettyPachydermClient(PachydermClient):
         df['Tick'] = df['Tick'].map({True: _fa('stopwatch'), False: ''})
         df['Branches'] = df['Branches'].apply(', '.join)
         return df[['Repo', 'Tick', 'Branches', 'Size', 'Created']].style \
-            .bar(subset=['Size'], color=BAR_COLOR) \
+            .bar(subset=['Size'], color=BAR_COLOR, vmin=0) \
             .format({'Created': _format_datetime, 'Size': _format_size}) \
             .set_properties(subset=['Branches'], **{'white-space': 'wrap'}) \
             .set_table_styles(self.table_styles) \
@@ -87,16 +87,18 @@ class PrettyPachydermClient(PachydermClient):
         df.rename({
             'repo': 'Repo',
             'commit': 'Commit',
+            'branches': 'Branch',
             'size_bytes': 'Size',
             'started': 'Started',
             'finished': 'Finished',
             'parent_commit': 'Parent Commit',
         }, axis=1, inplace=True)
-        return df[['Repo', 'Commit', 'Size', 'Started', 'Finished', 'Parent Commit']].style \
-            .bar(subset=['Size'], color=BAR_COLOR) \
+        return df[['Repo', 'Commit', 'Branch', 'Size', 'Started', 'Finished', 'Parent Commit']].style \
+            .bar(subset=['Size'], color=BAR_COLOR, vmin=0) \
             .format({
                 'Commit': _hash,
                 'Parent Commit': _hash,
+                'Branch': ', '.join,
                 'Started': _format_datetime,
                 'Finished': _format_datetime,
                 'Size': _format_size
@@ -105,22 +107,25 @@ class PrettyPachydermClient(PachydermClient):
             .hide_index()
 
     @inject_dependencies
-    def list_files(self, repos: WildcardFilter, commit: str = None, glob: str = '**', files_only: bool = True) -> style.Styler:
-        df = super().list_files(repos=repos, commit=commit, glob=glob, files_only=files_only).reset_index()
+    def list_files(self, repos: WildcardFilter, branch: Optional[str] = 'master', commit: Optional[str] = None,
+                   glob: str = '**', files_only: bool = True) -> style.Styler:
+        df = super().list_files(repos=repos, branch=branch, commit=commit, glob=glob, files_only=files_only).reset_index()
         df.rename({
             'repo': 'Repo',
             'type': 'Type',
             'path': 'Path',
             'size_bytes': 'Size',
             'commit': 'Commit',
+            'branches': 'Branch',
             'committed': 'Committed',
         }, axis=1, inplace=True)
-        return df[['Repo', 'Type', 'Path', 'Size', 'Commit', 'Committed']].style \
-            .bar(subset=['Size'], color=BAR_COLOR) \
+        return df[['Repo', 'Commit', 'Branch', 'Type', 'Path', 'Size', 'Committed']].style \
+            .bar(subset=['Size'], color=BAR_COLOR, vmin=0) \
             .format({
                 'Type': _format_file_type,
                 'Size': _format_size,
                 'Commit': _hash,
+                'Branch': ', '.join,
                 'Committed': _format_datetime
             }) \
             .set_properties(subset=['Path'], **{'white-space': 'wrap'}) \
@@ -180,7 +185,7 @@ class PrettyPachydermClient(PachydermClient):
             np.where(df['data_skipped'] > 0, ' + <span style="color: purple">' + df['data_skipped'].astype(str) + '</span>', '') + \
             ' / <span>' + df['data_total'].astype(str) + '</span>'
         return df[['Job', 'Pipeline', 'State', 'Started', 'Duration', 'Progress', 'Restarts', 'Downloaded', 'Uploaded', 'Output Commit']].style \
-            .bar(subset=['Duration'], color=BAR_COLOR) \
+            .bar(subset=['Duration'], color=BAR_COLOR, vmin=0) \
             .apply(_style_job_state, subset=['State']) \
             .apply(_style_job_progress, subset=['Progress']) \
             .format({
@@ -211,7 +216,7 @@ class PrettyPachydermClient(PachydermClient):
             'committed': 'Committed',
         }, axis=1, inplace=True)
         return df[['Job', 'Datum', 'State', 'Repo', 'Type', 'Path', 'Size', 'Commit', 'Committed']].style \
-            .bar(subset=['Size'], color=BAR_COLOR) \
+            .bar(subset=['Size'], color=BAR_COLOR, vmin=0) \
             .apply(_style_datum_state, subset=['State']) \
             .format({
                 'Job': _hash,
