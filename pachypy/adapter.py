@@ -312,6 +312,8 @@ class PachydermAdapter:
             commit: Commit ID to list files for. Overrides `branch` if specified.
             glob: Glob pattern to filter files returned.
         """
+        if branch is None and commit is None:
+            raise ValueError('branch and commit cannot both be None')
         file_type_mapping = {
             FILETYPE_RESERVED: 'reserved',
             FILETYPE_FILE: 'file',
