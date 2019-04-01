@@ -16,13 +16,13 @@ def get_mock_from_csv(file, datetime_cols=None, timedelta_cols=None, json_cols=N
 
 
 def mock_list_commits(_, repo, n=20):
-    df = get_mock_from_csv('list_commits.csv', datetime_cols=['started', 'finished'])
+    df = get_mock_from_csv('list_commits.csv', datetime_cols=['started', 'finished'], json_cols=['branches'])
     return df[df['repo'] == repo].head(n)
 
 
-def mock_list_files(_, repo, commit=None, glob='**'):
-    del glob
-    df = get_mock_from_csv('list_files.csv', datetime_cols=['committed'])
+def mock_list_files(_, repo, branch='master', commit=None, glob='**'):
+    del branch, commit, glob
+    df = get_mock_from_csv('list_files.csv', datetime_cols=['committed'], json_cols=['branches'])
     return df[df['repo'] == repo]
 
 
@@ -121,14 +121,14 @@ def test_list_commits(client, **mocks):
 def test_list_files(client, **mocks):
     del mocks
     df = client.list_files('test_x_pipeline_*', files_only=True)
-    assert len(df) == 7
+    assert len(df) == 4
     assert df['type'].eq('file').all()
     assert df['size_bytes'].gt(0).all()
-    df = client.list_files('test_x_pipeline_3', commit='ac6572d02c1749d699281c8f52f6860d', files_only=False)
-    assert len(df) == 10
+    df = client.list_files('test_x_pipeline_3', commit='e1d7e6912d5d4a3289e9fb7c82eec6b5', files_only=False)
+    assert len(df) == 7
     assert df['type'].eq('dir').any()
     with pytest.raises(PachydermClientException):
-        assert client.list_files('test_x_pipeline_*', commit='ac6572d02c1749d699281c8f52f6860d')
+        assert client.list_files('test_x_pipeline_*', commit='e1d7e6912d5d4a3289e9fb7c82eec6b5')
     with pytest.raises(PachydermClientException):
         assert client.list_files('repo_that_doesnt_exist')
 
