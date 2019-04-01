@@ -656,12 +656,9 @@ class PachydermAdapter:
 
 
 def _commit_branches(branch_heads: Dict[str, str]) -> Dict[str, List[str]]:
-    commit_branch: Dict[str, List[str]] = {}
+    commit_branch: Dict[str, List[str]] = {head: [] for head in branch_heads.values()}
     for branch, head in branch_heads.items():
-        if head in commit_branch:
-            commit_branch[head].append(branch)
-        else:
-            commit_branch[head] = [branch]
+        commit_branch[head].append(branch)
     return commit_branch
 
 
