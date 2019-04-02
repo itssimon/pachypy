@@ -1,7 +1,6 @@
 import os
 import time
 import json
-from datetime import datetime
 from typing import List, Dict, Generator, Union, Optional, TypeVar, cast
 
 import pandas as pd
@@ -171,7 +170,7 @@ class PachydermCommitAdapter:
 
     @retry
     def delete_file(self, path: str) -> None:
-        """Deletes the file found in a given `path` in PFS.
+        """Deletes the file found in a given `path` in PFS, if it exists.
 
         Args:
             path: PFS path of file to delete.
@@ -190,7 +189,7 @@ class PachydermCommitAdapter:
         self.pfs_client.stub.CreateBranch(CreateBranchRequest(head=self._commit, branch=branch))
 
     @retry
-    def list_file_paths(self, glob: str) -> List[str]:
+    def _list_file_paths(self, glob: str) -> List[str]:
         return [str(f.file.path) for f in self.pfs_client.stub.GlobFileStream(GlobFileRequest(commit=self._commit, pattern=glob))]
 
     def _raise_if_finished(self):
@@ -203,10 +202,6 @@ class PachydermAdapter:
     """Adapter class handling communication with Pachyderm.
 
     It is effectively a wrapper around the python_pachyderm package.
-
-    Args:
-        host: Hostname or IP address to reach pachd. Attempts to get this from PACHD_ADDRESS or ``~/.pachyderm/config.json`` if not set.
-        port: Port on which pachd is listening (usually 30650).
     """
 
     def __init__(self, host: Optional[str] = None, port: Optional[int] = None):
@@ -269,7 +264,6 @@ class PachydermAdapter:
 
     @retry
     def list_repos(self) -> pd.DataFrame:
-        """Returns list of repositories."""
         res = []
         for repo in self.pfs_client.list_repo():
             res.append({
@@ -291,11 +285,6 @@ class PachydermAdapter:
 
     @retry
     def list_commits(self, repo: str, n: int = 20) -> pd.DataFrame:
-        """Returns list of commits.
-
-        Args:
-            repo: Name of repo to list commits for.
-        """
         i = 1
         res = []
         commit_branches = _commit_branches(self.list_branch_heads(repo))
@@ -317,14 +306,6 @@ class PachydermAdapter:
 
     @retry
     def list_files(self, repo: str, branch: Optional[str] = 'master', commit: Optional[str] = None, glob: str = '**') -> pd.DataFrame:
-        """Returns list of files.
-
-        Args:
-            repo: Name of repo to list files for.
-            branch: Branch of repo to list files for.
-            commit: Commit ID to list files for. Overrides `branch` if specified.
-            glob: Glob pattern to filter files returned.
-        """
         if branch is None and commit is None:
             raise ValueError('branch and commit cannot both be None')
         file_type_mapping = {
@@ -354,7 +335,6 @@ class PachydermAdapter:
 
     @retry
     def list_pipelines(self) -> pd.DataFrame:
-        """Returns list of pipelines."""
         state_mapping = {
             PIPELINE_STARTING: 'starting',
             PIPELINE_RUNNING: 'running',
@@ -442,12 +422,6 @@ class PachydermAdapter:
 
     @retry
     def list_jobs(self, pipeline: Optional[str] = None, n: int = 20) -> pd.DataFrame:
-        """Returns list of last `n` jobs.
-
-        Args:
-            pipeline: Name of pipeline to return jobs for. Returns all jobs if not specified.
-            n: Maximum number of jobs to return.
-        """
         state_mapping = {
             JOB_STARTING: 'starting',
             JOB_RUNNING: 'running',
@@ -499,11 +473,6 @@ class PachydermAdapter:
 
     @retry
     def list_datums(self, job: str) -> pd.DataFrame:
-        """Returns a list of datums and files for a given job.
-
-        Args:
-            job: Job ID to list datums for.
-        """
         state_mapping = {
             DATUM_FAILED: 'failed',
             DATUM_SUCCESS: 'success',
@@ -534,13 +503,6 @@ class PachydermAdapter:
 
     @retry
     def get_logs(self, pipeline: Optional[str] = None, job: Optional[str] = None, master: bool = False) -> pd.DataFrame:
-        """Returns log entries.
-
-        Args:
-            pipeline: Name of pipeline to filter logs by.
-            job: ID of job to filter logs by.
-            master: Whether to return logs from the Pachyderm master process.
-        """
         res = []
         for msg in self.pps_client.get_logs(pipeline_name=pipeline, job_id=job, master=master):
             message = msg.message.strip()
@@ -564,88 +526,38 @@ class PachydermAdapter:
 
     @retry
     def create_pipeline(self, pipeline_specs: dict) -> None:
-        """Creates pipeline with given specs.
-
-        Args:
-            pipeline_specs: Pipeline specs.
-        """
         self.pps_client.stub.CreatePipeline(CreatePipelineRequest(**pipeline_specs))
 
     @retry
     def update_pipeline(self, pipeline_specs: dict, reprocess: bool = False) -> None:
-        """Updates existing pipeline with given specs.
-
-        Args:
-            pipeline_specs: Pipeline specs.
-            reprocess: Whether to reprocess datums with updated pipeline.
-        """
         self.pps_client.stub.CreatePipeline(CreatePipelineRequest(update=True, reprocess=reprocess, **pipeline_specs))
 
     @retry
     def delete_pipeline(self, pipeline: str) -> None:
-        """Deletes a pipeline.
-
-        Args:
-            pipeline: Name of pipeline to delete.
-        """
         self.pps_client.stub.DeletePipeline(DeletePipelineRequest(pipeline=Pipeline(name=pipeline)))
 
     @retry
     def start_pipeline(self, pipeline: str) -> None:
-        """Restarts a stopped pipeline.
-
-        Args:
-            pipeline: Name of pipeline to start.
-        """
         self.pps_client.stub.StartPipeline(StartPipelineRequest(pipeline=Pipeline(name=pipeline)))
 
     @retry
     def stop_pipeline(self, pipeline: str) -> None:
-        """Stops a running pipeline.
-
-        Args:
-            pipeline: Name of pipeline to stop.
-        """
         self.pps_client.stub.StopPipeline(StopPipelineRequest(pipeline=Pipeline(name=pipeline)))
 
     @retry
     def create_repo(self, repo: str, description: Optional[str] = None) -> None:
-        """Creates a new repository in PFS.
-
-        Args:
-            repo: Name of new repository.
-            description: Repository description.
-        """
         self.pfs_client.create_repo(repo, description=description)
 
     @retry
     def delete_repo(self, repo: str) -> None:
-        """Delete a repository in PFS.
-
-        Args:
-            repo: Name of repository to delete.
-        """
         self.pfs_client.delete_repo(repo)
 
     @retry
     def delete_commit(self, repo: str, commit: str) -> None:
-        """Deletes a commit.
-
-        Args:
-            repo: Name of repository.
-            commit: ID of commit to delete.
-        """
         self.pfs_client.delete_commit(Commit(repo=Repo(name=repo), id=commit))
 
     @retry
     def create_branch(self, repo: str, commit: str, branch: str) -> None:
-        """Sets a commit as a branch.
-
-        Args:
-            repo: Name of repository.
-            commit: ID of commit to set as branch.
-            branch: Name of the branch.
-        """
         repo = Repo(name=repo)
         commit = Commit(repo=repo, id=commit)
         branch = Branch(repo=repo, name=branch)
@@ -653,14 +565,6 @@ class PachydermAdapter:
 
     @retry
     def delete_branch(self, repo: str, branch: str) -> None:
-        """Deletes a branch, but leaves the commits intact.
-
-        The commits can still be accessed via their commit IDs.
-
-        Args:
-            repo: Name of repository.
-            branch: Name of branch to delete.
-        """
         self.pfs_client.stub.DeleteBranch(DeleteBranchRequest(branch=Branch(repo=Repo(name=repo), name=branch)))
 
     @retry
@@ -670,24 +574,6 @@ class PachydermAdapter:
         response = self.pfs_client.stub.GetFile(GetFileRequest(file=File(commit=Commit(repo=Repo(name=repo), id=commit), path=path)))
         for content in response:
             yield content.value
-
-    @retry
-    def commit_timestamp_file(self, repo: str, branch: str = 'master', overwrite: bool = True) -> None:
-        """Commits a timestamp file to given repository to trigger a cron input.
-
-        Args:
-            repo: Name of repository
-            branch: Name of branch. Defaults to 'master'.
-            overwrite: Whether to overwrite an existing timestamp file or to write a new one (Pachyderm >=1.8.6)
-        """
-        if overwrite:
-            timestamp = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
-            commit = self.pfs_client.start_commit(repo, branch=branch)
-            self.pfs_client.delete_file(commit, 'time')
-            self.pfs_client.put_file_bytes(commit, 'time', json.dumps(timestamp).encode('utf-8'))
-            self.pfs_client.finish_commit(commit)
-        else:
-            raise NotImplementedError
 
 
 def _commit_branches(branch_heads: Dict[str, str]) -> Dict[str, List[str]]:
