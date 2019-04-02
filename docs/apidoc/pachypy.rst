@@ -1,8 +1,5 @@
-pachypy
-=======
-
 Pachyderm Client
-----------------
+================
 
 .. autoclass:: pachypy.client.PachydermClient
     :members:
@@ -17,7 +14,7 @@ Pachyderm Client
     :show-inheritance:
 
 Container Registry Adapters
----------------------------
+===========================
 
 .. automodule:: pachypy.registry
     :members:
