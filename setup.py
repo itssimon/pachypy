@@ -8,7 +8,7 @@ setup(
     install_requires=[
         'python_pachyderm>=1.8.5',
         'python-dxf>=7.5.0',
-        'boto3>=1.9.119'
+        'boto3>=1.9.119',
         'pandas>=0.24.2',
         'pyyaml>=3.13',
         'tzlocal>=1.5.1',
