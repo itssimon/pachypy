@@ -227,6 +227,7 @@ def test_commit_put_files(client: PachydermClient, **mocks):
 
 @patch_adapter()
 def test_create_delete_branch_commit(client: PachydermClient, **mocks):
+    del mocks
     client.create_branch('test_repo', 'a1b2c4', 'test_branch')
     client.delete_branch('test_repo', 'test_branch')
     client.delete_commit('test_repo', 'a1b2c4')
