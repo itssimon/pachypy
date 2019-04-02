@@ -2,7 +2,7 @@ import os
 import json
 import pytest
 import pandas as pd
-from unittest.mock import patch, MagicMock, DEFAULT
+from unittest.mock import patch, MagicMock, PropertyMock, DEFAULT
 
 from pachypy.client import PachydermClient, PachydermClientException
 
@@ -55,8 +55,9 @@ def patch_adapter():
         get_logs=mock_get_logs,
         create_repo=DEFAULT,
         delete_repo=DEFAULT,
-        delete_commit=DEFAULT,
+        create_branch=DEFAULT,
         delete_branch=DEFAULT,
+        delete_commit=DEFAULT,
         create_pipeline=DEFAULT,
         update_pipeline=DEFAULT,
         delete_pipeline=DEFAULT,
@@ -68,6 +69,7 @@ def patch_adapter():
 def patch_commit_adapter():
     return patch.multiple(
         'pachypy.adapter.PachydermCommitAdapter',
+        commit=PropertyMock,
         start=DEFAULT,
         finish=DEFAULT,
         delete=DEFAULT,
@@ -198,9 +200,9 @@ def test_create_delete_repos(client, **mocks):
 
 
 @patch_commit_adapter()
-def test_commit_put_files(client, **mocks):
+def test_commit_put_files(client: PachydermClient, **mocks):
     mock_file = lambda f: os.path.join(os.path.dirname(__file__), 'mock', f)
-    with client.commit('test_repo_3') as c:
+    with client.commit('test_repo') as c:
         c.put_file(mock_file('list_commits.csv'))
         mocks['put_file_bytes'].assert_called_once()
         assert mocks['put_file_bytes'].call_args[0][1] == '/list_commits.csv'
@@ -223,10 +225,17 @@ def test_commit_put_files(client, **mocks):
         assert mocks['put_file_bytes'].call_count == 7
 
 
+@patch_adapter()
+def test_create_delete_branch_commit(client: PachydermClient, **mocks):
+    client.create_branch('test_repo', 'a1b2c4', 'test_branch')
+    client.delete_branch('test_repo', 'test_branch')
+    client.delete_commit('test_repo', 'a1b2c4')
+
+
 @patch_commit_adapter()
 def test_commit_delete_files(client, **mocks):
     mocks['list_file_paths'].return_value = ['/test_file_1', '/test_file_2']
-    with client.commit('test_repo_3') as c:
+    with client.commit('test_repo') as c:
         c.delete_files('test_file_*')
         assert mocks['delete_file'].call_count == 2
 
