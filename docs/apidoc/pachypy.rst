@@ -1,11 +1,8 @@
 pachypy package
 ===============
 
-Submodules
-----------
-
-pachypy.client module
----------------------
+client module
+-------------
 
 .. automodule:: pachypy.client
     :members: PachydermClient, PachydermCommit
@@ -13,8 +10,8 @@ pachypy.client module
     :inherited-members:
     :show-inheritance:
 
-pachypy.pretty module
----------------------
+pretty module
+-------------
 
 .. automodule:: pachypy.pretty
     :members: PrettyPachydermClient
@@ -22,19 +19,10 @@ pachypy.pretty module
     :inherited-members:
     :show-inheritance:
 
-pachypy.registry module
------------------------
-
-.. automodule:: pachypy.registry
-    :members:
-    :undoc-members:
-    :show-inheritance:
-
-
-Module contents
+registry module
 ---------------
 
-.. automodule:: pachypy
+.. automodule:: pachypy.registry
     :members:
     :undoc-members:
     :show-inheritance:
