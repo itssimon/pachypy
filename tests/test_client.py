@@ -20,6 +20,11 @@ def mock_list_commits(_, repo, n=20):
     return df[df['repo'] == repo].head(n)
 
 
+def mock_list_branch_heads(_, repo):
+    df = mock_list_commits(_, repo, n=1)
+    return {df['branches'].iloc[0][0]: df['commit'].iloc[0]}
+
+
 def mock_list_files(_, repo, **kwargs):
     del kwargs
     df = get_mock_from_csv('list_files.csv', datetime_cols=['committed'], json_cols=['branches'])
@@ -41,10 +46,14 @@ def mock_get_logs(_, pipeline=None):
     return df[df['pipeline'] == pipeline] if pipeline is not None else df
 
 
-def mock_get_file(_, *args, **kwargs):
-    del args, kwargs
-    yield b'te'
-    yield b'st'
+def mock_get_file(_, repo, path, **kwargs):
+    del repo, kwargs
+    if 'random' in path:
+        yield os.urandom(512)
+        yield os.urandom(512)
+    else:
+        yield b'te'
+        yield b'st'
 
 
 def patch_adapter():
@@ -53,6 +62,7 @@ def patch_adapter():
         list_repos=lambda _: get_mock_from_csv('list_repos.csv', datetime_cols=['created']),
         list_repo_names=lambda _: get_mock_from_csv('list_repos.csv')['repo'].tolist(),
         list_commits=mock_list_commits,
+        list_branch_heads=mock_list_branch_heads,
         list_files=mock_list_files,
         list_pipelines=lambda _: get_mock_from_csv('list_pipelines.csv', datetime_cols=['created']),
         list_pipeline_names=lambda _: get_mock_from_csv('list_pipelines.csv')['pipeline'].tolist(),
@@ -136,6 +146,8 @@ def test_list_files(client: PachydermClient, **mocks):
     df = client.list_files('test_x_pipeline_3', commit='e1d7e6912d5d4a3289e9fb7c82eec6b5', files_only=False)
     assert len(df) == 7
     assert df['type'].eq('dir').any()
+    df = client.list_files('test_x_pipeline_3', branch=None, commit=None, files_only=False)
+    assert len(df) == 7
     with pytest.raises(PachydermClientException):
         assert client.list_files('test_x_pipeline_*', commit='e1d7e6912d5d4a3289e9fb7c82eec6b5')
     with pytest.raises(PachydermClientException):
@@ -262,6 +274,9 @@ def test_get_file(client: PachydermClient, tmp_path, **mocks):
     assert client.get_file_content(repo, file) == b'test'
     assert client.get_file_content(repo, file, encoding='auto') == 'test'
     assert client.get_file_content(repo, file, encoding='utf-8') == 'test'
+
+    with pytest.raises(ValueError):
+        client.get_file_content(repo, 'random_file', encoding='auto')
 
     client.get_files('test_x_pipeline_3', destination=tmp_path)
     files = set(tmp_path.glob('**/*.avro'))
