@@ -283,10 +283,10 @@ def test_commit_put_file_bytes(adapter: PachydermAdapter, repo):
         c.put_file_bytes('test_2', '/folder/test_file_2')
         c.put_file_bytes(b'test_3', 'test_file_3')
         c.put_file_bytes(b'test_4', 'test_file_4')
-        assert set(c.list_file_paths('test*')) == {'/test_file_1', '/test_file_3', '/test_file_4'}
+        assert set(c._list_file_paths('test*')) == {'/test_file_1', '/test_file_3', '/test_file_4'}
         c.delete_file('test_file_4')
-        assert set(c.list_file_paths('test*')) == {'/test_file_1', '/test_file_3'}
-        assert len(c.list_file_paths('**')) == 4
+        assert set(c._list_file_paths('test*')) == {'/test_file_1', '/test_file_3'}
+        assert len(c._list_file_paths('**')) == 4
     files = adapter.list_files(repo, commit=c.commit)
     assert len(files) == 4
     assert '/test_file_1' in set(files.path)
@@ -344,8 +344,10 @@ def test_list_commits_files(adapter: PachydermAdapter, repo):
     assert len(adapter.list_files(repo)) == 0
 
     for _ in range(3):
-        adapter.commit_timestamp_file(repo)
-        adapter.commit_timestamp_file(repo, branch='test')
+        with PachydermCommitAdapter(adapter.pfs_client, repo) as c:
+            c.put_file_bytes(b'test', 'test')
+        with PachydermCommitAdapter(adapter.pfs_client, repo, branch='test') as c:
+            c.put_file_bytes(b'test', 'test')
 
     branch_heads = adapter.list_branch_heads(repo)
     assert 'master' in branch_heads and 'test' in branch_heads
@@ -353,7 +355,7 @@ def test_list_commits_files(adapter: PachydermAdapter, repo):
     commits = adapter.list_commits(repo, n=3)
     assert len(commits) == 3
     assert commits['repo'].iloc[0] == repo
-    assert commits['size_bytes'].iloc[0] == 26
+    assert commits['size_bytes'].iloc[0] == 12
     assert commits['branches'].iloc[0] == ['test']
     assert commits['branches'].iloc[1] == ['master']
     assert commits['branches'].iloc[2] == []
@@ -362,7 +364,7 @@ def test_list_commits_files(adapter: PachydermAdapter, repo):
     assert len(files) == 1
     assert files['repo'].iloc[0] == repo
     assert files['type'].iloc[0] == 'file'
-    assert files['size_bytes'].iloc[0] == 26
+    assert files['size_bytes'].iloc[0] == 12
 
     files = adapter.list_files(repo, branch='test')
     assert len(files) == 1
@@ -378,7 +380,8 @@ def test_list_jobs_get_logs(adapter: PachydermAdapter, pipeline_2):
     tick_repo_name = pipeline_name + '_' + pipeline_2['input']['cron']['name']
     assert await_pipeline_new_state(adapter, pipeline_name, initial_state='starting') == 'running'
 
-    adapter.commit_timestamp_file(tick_repo_name, overwrite=True)
+    with PachydermCommitAdapter(adapter.pfs_client, tick_repo_name) as c:
+        c.put_file_bytes(b'0', 'time')
     assert await_job_completed_state(adapter, pipeline_name) == 'success'
 
     jobs = adapter.list_jobs(pipeline=pipeline_name)

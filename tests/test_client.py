@@ -93,7 +93,7 @@ def patch_commit_adapter():
         put_file_bytes=DEFAULT,
         put_file_url=DEFAULT,
         delete_file=DEFAULT,
-        list_file_paths=DEFAULT,
+        _list_file_paths=DEFAULT,
     )
 
 
@@ -254,7 +254,7 @@ def test_create_delete_branch_commit(client: PachydermClient, **mocks):
 
 @patch_commit_adapter()
 def test_commit_delete_files(client: PachydermClient, **mocks):
-    mocks['list_file_paths'].return_value = ['/test_file_1', '/test_file_2']
+    mocks['_list_file_paths'].return_value = ['/test_file_1', '/test_file_2']
     with client.commit('test_repo') as c:
         c.delete_files('test_file_*')
         assert mocks['delete_file'].call_count == 2
