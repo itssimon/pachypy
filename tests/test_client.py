@@ -20,8 +20,8 @@ def mock_list_commits(_, repo, n=20):
     return df[df['repo'] == repo].head(n)
 
 
-def mock_list_files(_, repo, branch='master', commit=None, glob='**'):
-    del branch, commit, glob
+def mock_list_files(_, repo, **kwargs):
+    del kwargs
     df = get_mock_from_csv('list_files.csv', datetime_cols=['committed'], json_cols=['branches'])
     return df[df['repo'] == repo]
 
@@ -41,6 +41,12 @@ def mock_get_logs(_, pipeline=None):
     return df[df['pipeline'] == pipeline] if pipeline is not None else df
 
 
+def mock_get_file(_, *args, **kwargs):
+    del args, kwargs
+    yield b'te'
+    yield b'st'
+
+
 def patch_adapter():
     return patch.multiple(
         'pachypy.adapter.PachydermAdapter',
@@ -53,6 +59,7 @@ def patch_adapter():
         list_jobs=mock_list_jobs,
         list_datums=mock_list_datums,
         get_logs=mock_get_logs,
+        get_file=mock_get_file,
         create_repo=DEFAULT,
         delete_repo=DEFAULT,
         create_branch=DEFAULT,
@@ -93,7 +100,7 @@ def client(pipeline_spec_files_path):
     )
 
 
-def test_init_registry_adapters(client):
+def test_init_registry_adapters(client: PachydermClient):
     from pachypy.registry import DockerRegistryAdapter, AmazonECRAdapter  # , GCRAdapter
     assert isinstance(client.docker_registry_adapter, DockerRegistryAdapter)
     assert isinstance(client.ecr_adapter, AmazonECRAdapter)
@@ -101,7 +108,7 @@ def test_init_registry_adapters(client):
 
 
 @patch_adapter()
-def test_list_repos(client, **mocks):
+def test_list_repos(client: PachydermClient, **mocks):
     del mocks
     df = client.list_repos()
     assert len(df) == 6
@@ -110,7 +117,7 @@ def test_list_repos(client, **mocks):
 
 
 @patch_adapter()
-def test_list_commits(client, **mocks):
+def test_list_commits(client: PachydermClient, **mocks):
     del mocks
     df = client.list_commits('test_x_pipeline_*')
     assert len(df) == 10
@@ -120,7 +127,7 @@ def test_list_commits(client, **mocks):
 
 
 @patch_adapter()
-def test_list_files(client, **mocks):
+def test_list_files(client: PachydermClient, **mocks):
     del mocks
     df = client.list_files('test_x_pipeline_*', files_only=True)
     assert len(df) == 4
@@ -136,7 +143,7 @@ def test_list_files(client, **mocks):
 
 
 @patch_adapter()
-def test_list_pipelines(client, **mocks):
+def test_list_pipelines(client: PachydermClient, **mocks):
     del mocks
     assert len(client.list_pipelines()) == 5
     assert len(client.list_pipelines('test_x_pipeline_?')) == 5
@@ -144,7 +151,7 @@ def test_list_pipelines(client, **mocks):
 
 
 @patch_adapter()
-def test_list_jobs(client, **mocks):
+def test_list_jobs(client: PachydermClient, **mocks):
     del mocks
     df = client.list_jobs()
     assert len(df) == 8
@@ -158,7 +165,7 @@ def test_list_jobs(client, **mocks):
 
 
 @patch_adapter()
-def test_list_datums(client, **mocks):
+def test_list_datums(client: PachydermClient, **mocks):
     del mocks
     df = client.list_datums('e26ccf65131b4b3d9087cebc2f944279')
     assert len(df) == 10
@@ -169,7 +176,7 @@ def test_list_datums(client, **mocks):
 
 
 @patch_adapter()
-def test_get_logs(client, **mocks):
+def test_get_logs(client: PachydermClient, **mocks):
     del mocks
     assert len(client.get_logs('test_x_pipeline_5')) == 10
     assert len(client.get_logs('test_x_pipeline_5', user_only=True)) == 7
@@ -181,7 +188,7 @@ def test_get_logs(client, **mocks):
 
 
 @patch_adapter()
-def test_create_delete_repos(client, **mocks):
+def test_create_delete_repos(client: PachydermClient, **mocks):
     del mocks
     list_repo_names = 'pachypy.adapter.PachydermAdapter.list_repo_names'
     repos = ['test_repo_1', 'test_repo_2']
@@ -234,14 +241,35 @@ def test_create_delete_branch_commit(client: PachydermClient, **mocks):
 
 
 @patch_commit_adapter()
-def test_commit_delete_files(client, **mocks):
+def test_commit_delete_files(client: PachydermClient, **mocks):
     mocks['list_file_paths'].return_value = ['/test_file_1', '/test_file_2']
     with client.commit('test_repo') as c:
         c.delete_files('test_file_*')
         assert mocks['delete_file'].call_count == 2
 
 
-def test_read_pipeline_specs(client):
+@patch_adapter()
+def test_get_file(client: PachydermClient, tmp_path, **mocks):
+    repo = 'test_repo'
+    file = 'test_file'
+
+    client.get_file(repo, file, destination=tmp_path)
+    assert os.path.exists(tmp_path / file) and os.path.getsize(tmp_path / file) == 4
+
+    client.get_file(repo, file, destination=tmp_path / 'renamed_test_file')
+    assert os.path.exists(tmp_path / 'renamed_test_file')
+
+    assert client.get_file_content(repo, file) == b'test'
+    assert client.get_file_content(repo, file, encoding='auto') == 'test'
+    assert client.get_file_content(repo, file, encoding='utf-8') == 'test'
+
+    client.get_files('test_x_pipeline_3', destination=tmp_path)
+    files = set(tmp_path.glob('**/*.avro'))
+    assert len(files) == 4
+    assert tmp_path / '1/2019-03-31/1554087629/1554056117887.avro' in files
+
+
+def test_read_pipeline_specs(client: PachydermClient):
     def custom_transform_pipeline_spec(pipeline_spec):
         pipeline_spec['test'] = True
         return pipeline_spec
@@ -255,7 +283,7 @@ def test_read_pipeline_specs(client):
 
 
 @patch_adapter()
-def test_create_update_delete_pipelines(client, **mocks):
+def test_create_update_delete_pipelines(client: PachydermClient, **mocks):
     del mocks
     list_pipeline_names = 'pachypy.adapter.PachydermAdapter.list_pipeline_names'
     pipelines = ['test_a_pipeline_1', 'test_a_pipeline_2']
@@ -269,7 +297,7 @@ def test_create_update_delete_pipelines(client, **mocks):
 
 
 @patch_adapter()
-def test_stop_start_pipelines(client, **mocks):
+def test_stop_start_pipelines(client: PachydermClient, **mocks):
     del mocks
     list_pipeline_names = 'pachypy.adapter.PachydermAdapter.list_pipeline_names'
     pipelines = ['test_a_pipeline_1', 'test_a_pipeline_2']
@@ -278,7 +306,7 @@ def test_stop_start_pipelines(client, **mocks):
         assert client.start_pipelines('test_a*') == pipelines
 
 
-def test_update_image_digest(client):
+def test_update_image_digest(client: PachydermClient):
     digest = 'sha1:123'
     tag = 'tag'
     with patch('pachypy.registry.DockerRegistryAdapter.get_image_digest', MagicMock(return_value=digest)) as mock:

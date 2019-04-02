@@ -9,7 +9,9 @@ from pachypy.adapter import PachydermAdapter, PachydermCommitAdapter, PachydermE
 
 @pytest.fixture(scope='module')
 def adapter() -> PachydermAdapter:
-    return PachydermAdapter()
+    adapter = PachydermAdapter()
+    setattr(adapter, 'pachyderm_available', None)
+    return adapter
 
 
 @pytest.fixture(scope='function')
@@ -111,7 +113,9 @@ def pipeline_4(adapter: PachydermAdapter):
 
 
 def skip_if_pachyderm_unavailable(adapter: PachydermAdapter):
-    if not adapter.check_connectivity():
+    if adapter._connectable is None:
+        adapter.check_connectivity()
+    if not adapter._connectable:
         pytest.skip('Pachyderm cluster is not available')
 
 
@@ -382,3 +386,14 @@ def test_list_jobs_get_logs(adapter: PachydermAdapter, pipeline_2):
     logs = logs[logs['user']]
     assert logs.shape == (1, 7)
     assert logs['message'].iloc[0] == 'test'
+
+
+def test_get_file(adapter: PachydermAdapter, repo):
+    skip_if_pachyderm_unavailable(adapter)
+    with PachydermCommitAdapter(adapter.pfs_client, repo) as c:
+        c.put_file_bytes(b'123', '/test_file_1')
+    with PachydermCommitAdapter(adapter.pfs_client, repo, branch='test') as c:
+        c.put_file_bytes(b'321', '/test_file_2')
+    assert next(adapter.get_file(repo, '/test_file_1')) == b'123'
+    assert next(adapter.get_file(repo, '/test_file_2', branch='test')) == b'321'
+    assert next(adapter.get_file(repo, '/test_file_2', commit=c.commit)) == b'321'
