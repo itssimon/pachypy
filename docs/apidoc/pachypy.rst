@@ -4,10 +4,10 @@ pachypy package
 Submodules
 ----------
 
-pachypy.base module
--------------------
+pachypy.adapter module
+----------------------
 
-.. automodule:: pachypy.base
+.. automodule:: pachypy.adapter
     :members:
     :undoc-members:
     :show-inheritance:
@@ -16,6 +16,14 @@ pachypy.client module
 ---------------------
 
 .. automodule:: pachypy.client
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+pachypy.pretty module
+---------------------
+
+.. automodule:: pachypy.pretty
     :members:
     :undoc-members:
     :show-inheritance:
