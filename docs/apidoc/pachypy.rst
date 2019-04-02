@@ -4,28 +4,22 @@ pachypy package
 Submodules
 ----------
 
-pachypy.adapter module
-----------------------
-
-.. automodule:: pachypy.adapter
-    :members:
-    :undoc-members:
-    :show-inheritance:
-
 pachypy.client module
 ---------------------
 
 .. automodule:: pachypy.client
-    :members:
+    :members: PachydermClient, PachydermCommit
     :undoc-members:
+    :inherited-members:
     :show-inheritance:
 
 pachypy.pretty module
 ---------------------
 
 .. automodule:: pachypy.pretty
-    :members:
+    :members: PrettyPachydermClient
     :undoc-members:
+    :inherited-members:
     :show-inheritance:
 
 pachypy.registry module

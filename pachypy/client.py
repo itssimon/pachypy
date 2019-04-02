@@ -1,5 +1,5 @@
 __all__ = [
-    'PachydermClient'
+    'PachydermClient', 'PachydermCommit'
 ]
 
 import io
@@ -12,15 +12,14 @@ from datetime import datetime
 from fnmatch import fnmatch
 from glob import glob
 from pathlib import Path
-from typing import BinaryIO, Callable, Iterable, List, Optional, Tuple, Union
+from typing import BinaryIO, Callable, IO, Iterable, List, Optional, Tuple, Union
 
 import chardet
 import pandas as pd
 import yaml
 from tzlocal import get_localzone
 
-from .adapter import (PachydermAdapter, PachydermCommitAdapter,
-                      PachydermException)
+from .adapter import PachydermAdapter, PachydermCommitAdapter, PachydermException
 from .registry import AmazonECRAdapter, DockerRegistryAdapter, GCRAdapter
 
 WildcardFilter = Optional[Union[str, Iterable[str]]]
@@ -38,11 +37,11 @@ class PachydermCommit(PachydermCommitAdapter):
 
     """Represents a commit in Pachyderm.
 
-    Objects of this class are typically created via :meth:`~pachypy.adapter.PachydermAdapter.commit`
+    Objects of this class are typically created via :meth:`~pachypy.client.PachydermClient.commit`
     and used as a context manager, which automatically starts and finishes a commit.
     """
 
-    def put_file(self, file: Union[str, Path, io.IOBase], path: Optional[str] = None,
+    def put_file(self, file: Union[str, Path, IO], path: Optional[str] = None,
                  delimiter: str = 'none', target_file_datums: int = 0, target_file_bytes: int = 0) -> None:
         """Uploads a file or the content of a file-like to the given `path` in PFS.
 
@@ -58,17 +57,17 @@ class PachydermCommit(PachydermCommitAdapter):
             target_file_bytes: Specifies the target number of bytes in each written file.
                 Files may have more or fewer bytes than the target.
         """
-        if isinstance(file, io.IOBase):
-            if path is None or path.endswith('/'):
-                raise ValueError('path needs to be specified (including filename)')
-            self.put_file_bytes(file.read(), path, delimiter=delimiter, target_file_datums=target_file_datums, target_file_bytes=target_file_bytes)  # type: ignore
-        else:
+        if isinstance(file, (str, Path)):
             if path is None:
                 path = '/'
             if path.endswith('/'):
                 path = path + os.path.basename(file)
             with open(Path(file).expanduser().resolve(), 'rb') as f:
                 self.put_file_bytes(f.read(), path, delimiter=delimiter, target_file_datums=target_file_datums, target_file_bytes=target_file_bytes)
+        else:
+            if path is None or path.endswith('/'):
+                raise ValueError('path needs to be specified (including filename)')
+            self.put_file_bytes(file.read(), path, delimiter=delimiter, target_file_datums=target_file_datums, target_file_bytes=target_file_bytes)  # type: ignore
 
     def put_files(self, files: FileGlob, path: str = '/') -> List[str]:
         """Uploads one or multiple files defined by `files` to the given `path` in PFS.
