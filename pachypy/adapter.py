@@ -54,6 +54,7 @@ def retry(f: T) -> T:
             raise PachydermException(e.details(), e.code())
         else:
             self._retries = 0
+            self._connectable = True
     return cast(T, retry_wrapper)
 
 
@@ -232,6 +233,7 @@ class PachydermAdapter:
         self.pfs_client = PfsClient(**kwargs)
         self.max_retries = 1
         self._retries = 0
+        self._connectable: Optional[bool] = None
 
     @property
     def host(self) -> str:
@@ -262,7 +264,8 @@ class PachydermAdapter:
                 break
             time.sleep(0.001)
             connectivity = self.pfs_client.channel._channel.check_connectivity_state(False)
-        return connectivity == 2
+        self._connectable = connectivity == 2
+        return self._connectable
 
     @retry
     def list_repos(self) -> pd.DataFrame:
