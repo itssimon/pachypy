@@ -1,26 +1,23 @@
-pachypy package
-===============
+pachypy
+=======
 
-client module
--------------
+Pachyderm Client
+----------------
 
-.. automodule:: pachypy.client
-    :members: PachydermClient, PachydermCommit
+.. autoclass:: pachypy.client.PachydermClient
+    :members:
     :undoc-members:
     :inherited-members:
     :show-inheritance:
 
-pretty module
--------------
-
-.. automodule:: pachypy.pretty
-    :members: PrettyPachydermClient
+.. autoclass:: pachypy.client.PachydermCommit
+    :members:
     :undoc-members:
     :inherited-members:
     :show-inheritance:
 
-registry module
----------------
+Container Registry Adapters
+---------------------------
 
 .. automodule:: pachypy.registry
     :members:
