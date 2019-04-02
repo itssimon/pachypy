@@ -13,6 +13,7 @@ setup(
         'pyyaml>=3.13',
         'tzlocal>=1.5.1',
         'termcolor>=1.1.0',
+        'ipython>=7.4.0',
     ],
     extras_require={
         'docs':  [
