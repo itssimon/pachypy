@@ -3,6 +3,7 @@ __all__ = [
 ]
 
 import io
+import json
 import logging
 import os
 import re
@@ -91,7 +92,7 @@ class PachydermCommit(PachydermCommitAdapter):
         Returns:
             PFS paths of deleted files.
         """
-        files = self.list_file_paths(glob)
+        files = self._list_file_paths(glob)
         for path in files:
             self.delete_file(path)
         return files
@@ -377,6 +378,25 @@ class PachydermClient:
         """
         return PachydermCommit(self.adapter.pfs_client, repo, branch=branch, parent_commit=parent_commit)
 
+    def put_timestamp_file(self, repo: str, branch: str = 'master', overwrite: bool = True) -> None:
+        """Put a timestamp file in a repository to simulate a cron tick.
+
+        This can be used to trigger pipelines with a cron input.
+
+        Args:
+            repo: Repository to put timestamp file in.
+            branch: Branch in repository.
+            overwrite: Whether to overwrite an existing 'time' file (True),
+                or to add a new timestamp file (False).
+        """
+        if overwrite:
+            timestamp = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
+            with self.commit(repo, branch=branch) as c:
+                c.delete_file('time')
+                c.put_file_bytes(json.dumps(timestamp).encode('utf-8'), 'time')
+        else:
+            raise NotImplementedError
+
     def delete_commit(self, repo: str, commit: str) -> None:
         """Deletes a commit.
 
@@ -560,14 +580,14 @@ class PachydermClient:
     def trigger_pipeline(self, pipeline: str, input_name: str = 'tick') -> None:
         """Trigger a cron-triggered pipeline by committing a timestamp file into its tick repository.
 
-        This simply calls :meth:`~pachypy.adapter.PachydermAdapter.commit_timestamp_file`,
+        This simply calls :meth:`~pachypy.client.PachydermClient.put_timestamp_file`,
         expecting the cron input repo of the pipeline to have the default name ``<pipeline>_<input_name>``.
 
         Args:
-            pipeline: Name of pipeline to trigger
+            pipeline: Name of pipeline to trigger.
             input_name: Name of the cron input. Defaults to 'tick'.
         """
-        self.adapter.commit_timestamp_file(repo=f'{pipeline}_{input_name}')
+        self.put_timestamp_file(f'{pipeline}_{input_name}')
 
     def read_pipeline_specs(self, pipelines: WildcardFilter = '*') -> List[dict]:
         """Read pipelines specs from files.
