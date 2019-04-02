@@ -59,20 +59,6 @@ def retry(f: T) -> T:
 
 class PachydermCommitAdapter:
 
-    """Adapter class and context manager for a commit.
-
-    Objects of this class are typically created via :meth:`~pachypy.adapter.PachydermAdapter.commit`.
-
-    Args:
-        pfs_client: PFS client object.
-        repo: Name of repository.
-        branch: Branch in repository. When the commit is started on a branch the previous head of the branch is
-                used as the parent of the commit. You may pass None in which case the new commit will have
-                no parent (unless parent_commit is specified) and will initially appear empty.
-        parent_commit: ID of parent commit. Upon creation the new commit will appear identical to the parent commit.
-            Data can safely be added to the new commit without affecting the contents of the parent commit.
-    """
-
     def __init__(self, pfs_client: PfsClient, repo: str, branch: Optional[str] = 'master', parent_commit: Optional[str] = None):
         self.pfs_client = pfs_client
         self.repo = repo

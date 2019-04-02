@@ -36,6 +36,12 @@ class PachydermClientException(PachydermException):
 
 class PachydermCommit(PachydermCommitAdapter):
 
+    """Represents a commit in Pachyderm.
+
+    Objects of this class are typically created via :meth:`~pachypy.adapter.PachydermAdapter.commit`
+    and used as a context manager, which automatically starts and finishes a commit.
+    """
+
     def put_file(self, file: Union[str, Path, io.IOBase], path: Optional[str] = None,
                  delimiter: str = 'none', target_file_datums: int = 0, target_file_bytes: int = 0) -> None:
         """Uploads a file or the content of a file-like to the given `path` in PFS.
@@ -106,7 +112,7 @@ class PachydermCommit(PachydermCommitAdapter):
 
 class PachydermClient:
 
-    """Pachyderm client aiming to make interaction with a Pachyderm cluster more efficient and user-friendly.
+    """Pachyderm client.
 
     Args:
         host: Hostname or IP address to reach pachd. Attempts to get this from PACHD_ADDRESS or ``~/.pachyderm/config.json`` if not set.
