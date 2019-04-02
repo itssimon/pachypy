@@ -2,24 +2,25 @@ __all__ = [
     'PachydermClient'
 ]
 
-import os
 import io
-import re
-import yaml
 import logging
+import os
+import re
+from collections import namedtuple
+from datetime import datetime
+from fnmatch import fnmatch
 from glob import glob
 from pathlib import Path
-from fnmatch import fnmatch
-from datetime import datetime
-from collections import namedtuple
-from typing import List, Tuple, Iterable, Callable, Union, Optional
+from typing import BinaryIO, Callable, Iterable, List, Optional, Tuple, Union
 
+import chardet
 import pandas as pd
+import yaml
 from tzlocal import get_localzone
 
-from .adapter import PachydermAdapter, PachydermCommitAdapter, PachydermException
-from .registry import DockerRegistryAdapter, AmazonECRAdapter, GCRAdapter
-
+from .adapter import (PachydermAdapter, PachydermCommitAdapter,
+                      PachydermException)
+from .registry import AmazonECRAdapter, DockerRegistryAdapter, GCRAdapter
 
 WildcardFilter = Optional[Union[str, Iterable[str]]]
 FileGlob = Optional[Union[str, Path, Iterable[Union[str, Path]]]]
@@ -405,6 +406,78 @@ class PachydermClient:
             branch: Name of branch to delete.
         """
         self.adapter.delete_branch(repo, branch)
+
+    def get_file(self, repo: str, path: str, branch: Optional[str] = 'master', commit: Optional[str] = None,
+                 destination: Union[str, Path, BinaryIO] = '.') -> None:
+        """Retrieves a file from a repository in PFS and writes it to `destination`.
+
+        Args:
+            repo: Repository to retrieve file from.
+            path: Path within repository in PFS to retrieve file from.
+            branch: Branch to retrieve file from.
+            commit: Commit to retrieve file from. Overrides `branch` if specified.
+            destination: Local path or binary file object to write file to.
+                If it is a directory the file's basename will be appended.
+        """
+        content = self.adapter.get_file(repo, path, branch=branch, commit=commit)
+        if isinstance(destination, (str, Path)):
+            if os.path.isdir(destination):
+                destination = os.path.join(destination, os.path.basename(path))
+            with open(destination, 'wb') as f:
+                for value in content:
+                    f.write(value)
+        else:
+            for value in content:
+                destination.write(value)
+
+    def get_file_content(self, repo: str, path: str, branch: Optional[str] = 'master', commit: Optional[str] = None,
+                         encoding: Optional[str] = None) -> Union[bytes, str]:
+        """Retrieves a file from a repository in PFS and returns its content.
+
+        Args:
+            repo: Repository to retrieve file from.
+            path: Path within repository in PFS to retrieve file from.
+            branch: Branch to retrieve file from.
+            commit: Commit to retrieve file from. Overrides `branch` if specified.
+            encoding: If specified, the file content will be returned as a decoded string.
+                May be set to 'auto' to try to infer the encoding automatically.
+
+        Returns:
+            File contents as bytes, or as string if `encoding` is set.
+        """
+        with io.BytesIO() as destination:
+            self.get_file(repo, path, branch=branch, commit=commit, destination=destination)
+            content = destination.getvalue()
+        if encoding == 'auto':
+            enc = chardet.detect(content)
+            encoding = enc['encoding']
+            if enc['confidence'] < 0.9:
+                raise ValueError('could not reliably detect encoding of file content')
+        if encoding is not None:
+            return content.decode(encoding)
+        return content
+
+    def get_files(self, repo: str, path: str = '/', glob: str = '**', branch: Optional[str] = 'master', commit: Optional[str] = None,
+                  destination: Union[str, Path] = '.') -> None:
+        """Retrieves multiple files from a repository in PFS and writes them to a local directory.
+
+        Args:
+            repo: Repository to retrieve files from.
+            path: Path within repository in PFS to retrieve files from.
+            glob: Glob pattern to filter files retrieved from `path`. Is interpreted relative to `path`.
+            branch: Branch to retrieve files from.
+            commit: Commit to retrieve files from. Overrides `branch` if specified.
+            destination: Local path to write files to. Must be a directory. Will be created if it doesn't exist.
+        """
+        path = '/' + path.strip('/')
+        glob = path + '/' + glob
+        destination = Path(destination).expanduser().resolve()
+        files = self.adapter.list_files(repo, branch=branch, commit=commit, glob=glob)
+        files = files[files['type'] == 'file']
+        for _, row in files.iterrows():
+            local_path = destination / os.path.relpath(row['path'], path)
+            os.makedirs(local_path.parent, exist_ok=True)
+            self.get_file(repo, path=row['path'], commit=row['commit'], destination=local_path)
 
     def create_pipelines(self, pipelines: WildcardFilter = '*', pipeline_specs: Optional[List[dict]] = None,
                          recreate: bool = False) -> PipelineChanges:
