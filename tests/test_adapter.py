@@ -314,6 +314,17 @@ def test_commit_put_file_bytes(adapter: PachydermAdapter, repo):
     assert 'test' not in adapter.list_branch_heads(repo)
 
 
+def test_commit_create_branch(adapter: PachydermAdapter, repo):
+    skip_if_pachyderm_unavailable(adapter)
+    with PachydermCommitAdapter(adapter.pfs_client, repo) as c:
+        c.create_branch('test_branch_1')
+    adapter.create_branch(repo, c.commit, 'test_branch_2')
+    branch_heads = adapter.list_branch_heads(repo)
+    assert 'test_branch_1' in branch_heads and 'test_branch_2' in branch_heads
+    assert branch_heads['test_branch_1'] == branch_heads['master']
+    assert branch_heads['test_branch_2'] == branch_heads['master']
+
+
 def test_commit_put_file_url(adapter: PachydermAdapter, repo):
     skip_if_pachyderm_unavailable(adapter)
     with PachydermCommitAdapter(adapter.pfs_client, repo, branch=None) as c:
