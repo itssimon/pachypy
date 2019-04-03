@@ -1,7 +1,7 @@
 import os
 import time
 import json
-from typing import List, Dict, Generator, Union, Optional
+from typing import List, Dict, Generator, Union, Optional, TypeVar, cast
 
 import grpc
 import pandas as pd
@@ -29,6 +29,9 @@ from python_pachyderm.client.version.versionpb.version_pb2 import Version
 from python_pachyderm.client.version.versionpb.version_pb2_grpc import APIStub as VersionAPIStub
 
 
+T = TypeVar('T')
+
+
 class PachydermException(Exception):
 
     def __init__(self, message: str, code=None):
@@ -41,26 +44,21 @@ class PachydermException(Exception):
             self.status = None
 
 
-def retry(channel: str):
-    def decorator(f):
-        def retry_wrapper(self, *args, **kwargs):
-            print(f'Trying ({self.__class__.__name__}.{f.__name__})...')
-            adapter = self.adapter if hasattr(self, 'adapter') else self
-            try:
-                return f(self, *args, **kwargs)
-            except grpc._channel._Rendezvous as e:
-                if e.code().value[1] == 'unavailable' and adapter._retries < adapter._max_retries:
-                    print('Unavailable')
-                    if adapter.check_connectivity(channel):
-                        adapter._retries += 1
-                        return retry_wrapper(self, *args, **kwargs)
-                raise PachydermException(e.details(), e.code())
-            else:
-                print('All good')
-                adapter._retries = 0
-                adapter._connectable = True
-        return retry_wrapper
-    return decorator
+def retry(f: T) -> T:
+    def retry_wrapper(self, *args, **kwargs):
+        adapter = self.adapter if hasattr(self, 'adapter') else self
+        try:
+            return f(self, *args, **kwargs)
+        except grpc._channel._Rendezvous as e:
+            if e.code().value[1] == 'unavailable' and adapter._retries < adapter.max_retries:
+                if adapter.check_connectivity():
+                    adapter._retries += 1
+                    return retry_wrapper(self, *args, **kwargs)
+            raise PachydermException(e.details(), e.code())
+        else:
+            adapter._retries = 0
+            adapter._connectable = True
+    return cast(T, retry_wrapper)
 
 
 class PachydermAdapter:
@@ -91,19 +89,20 @@ class PachydermAdapter:
 
         self.host = host
         self.port = port
-        self.channels = {
-            c: grpc.insecure_channel(f'{host}:{port}')
-            for c in ['pfs', 'pps', 'version']
-        }
-        self.pfs_stub = PfsAPIStub(self.channels['pfs'])
-        self.pps_stub = PpsAPIStub(self.channels['pps'])
-        self.version_stub = VersionAPIStub(self.channels['version'])
+        # self.channels = {
+        #     c: grpc.insecure_channel(f'{host}:{port}')
+        #     for c in ['pfs', 'pps', 'version']
+        # }
+        self.channel = grpc.insecure_channel(f'{host}:{port}')
+        self.pfs_stub = PfsAPIStub(self.channel)
+        self.pps_stub = PpsAPIStub(self.channel)
+        self.version_stub = VersionAPIStub(self.channel)
 
         self._retries = 0
         self._max_retries = 1
         self._connectable: Optional[bool] = None
 
-    def check_connectivity(self, channel: str = 'pfs', timeout: float = 10.0) -> bool:
+    def check_connectivity(self, timeout: float = 10.0) -> bool:
         """Checks the connectivity to pachd. Tries to connect if not currently connected.
 
         The gRPC channel connectivity knows 5 states:
@@ -115,21 +114,19 @@ class PachydermAdapter:
         Returns:
             True if the connectivity state is ready (2), False otherwise.
         """
-        print(f'Checking connectivity of {channel} channel...')
         connectivity = 0
         timeout = time.time() + timeout
-        connectivity = self.channels[channel]._channel.check_connectivity_state(True)
+        connectivity = self.channel._channel.check_connectivity_state(True)
         while connectivity < 2:
             if time.time() > timeout:
                 connectivity = 5
                 break
             time.sleep(0.001)
-            connectivity = self.channels[channel]._channel.check_connectivity_state(False)
+            connectivity = self.channel._channel.check_connectivity_state(False)
         self._connectable = connectivity == 2
-        print('Success!' if self._connectable else 'No connectivity.')
         return self._connectable
 
-    @retry('pfs')
+    @retry
     def list_repos(self) -> pd.DataFrame:
         res = []
         for repo in self.pfs_stub.ListRepo(ListRepoRequest()).repo_info:
@@ -142,17 +139,17 @@ class PachydermAdapter:
         return pd.DataFrame(res, columns=['repo', 'size_bytes', 'branches', 'created']) \
             .astype({'size_bytes': 'int', 'created': 'datetime64[ns]'})
 
-    @retry('pfs')
+    @retry
     def list_repo_names(self) -> List[str]:
         repos = self.pfs_stub.ListRepo(ListRepoRequest()).repo_info
         return [r.repo.name for r in repos]
 
-    @retry('pfs')
+    @retry
     def list_branch_heads(self, repo: str) -> Dict[str, str]:
         branches = self.pfs_stub.ListBranch(ListBranchRequest(repo=Repo(name=repo))).branch_info
         return {b.branch.name: b.head.id for b in branches}
 
-    @retry('pfs')
+    @retry
     def list_commits(self, repo: str, n: int = 20) -> pd.DataFrame:
         i = 1
         res = []
@@ -175,7 +172,7 @@ class PachydermAdapter:
         return pd.DataFrame(res, columns=['repo', 'commit', 'branches', 'size_bytes', 'started', 'finished', 'parent_commit']) \
             .astype({'size_bytes': 'int', 'started': 'datetime64[ns]', 'finished': 'datetime64[ns]'})
 
-    @retry('pfs')
+    @retry
     def list_files(self, repo: str, branch: Optional[str] = 'master', commit: Optional[str] = None, glob: str = '**') -> pd.DataFrame:
         if branch is None and commit is None:
             raise ValueError('branch and commit cannot both be None')
@@ -204,7 +201,7 @@ class PachydermAdapter:
         return pd.DataFrame(res, columns=['repo', 'commit', 'branches', 'path', 'type', 'size_bytes', 'committed']) \
             .astype({'size_bytes': 'int', 'committed': 'datetime64[ns]'})
 
-    @retry('pps')
+    @retry
     def list_pipelines(self) -> pd.DataFrame:
         state_mapping = {
             PIPELINE_STARTING: 'starting',
@@ -288,12 +285,12 @@ class PachydermAdapter:
             'created': 'datetime64[ns]',
         })
 
-    @retry('pps')
+    @retry
     def list_pipeline_names(self) -> List[str]:
         pipelines = self.pps_stub.ListPipeline(ListPipelineRequest()).pipeline_info
         return [p.pipeline.name for p in pipelines]
 
-    @retry('pps')
+    @retry
     def list_jobs(self, pipeline: Optional[str] = None, n: int = 20) -> pd.DataFrame:
         state_mapping = {
             JOB_STARTING: 'starting',
@@ -346,7 +343,7 @@ class PachydermAdapter:
             'upload_bytes': 'float',
         })
 
-    @retry('pps')
+    @retry
     def list_datums(self, job: str) -> pd.DataFrame:
         state_mapping = {
             DATUM_FAILED: 'failed',
@@ -377,7 +374,7 @@ class PachydermAdapter:
         return pd.DataFrame(res, columns=['job', 'datum', 'state', 'repo', 'path', 'type', 'size_bytes', 'commit', 'committed']) \
             .astype({'size_bytes': 'int', 'committed': 'datetime64[ns]'})
 
-    @retry('pps')
+    @retry
     def get_logs(self, pipeline: Optional[str] = None, job: Optional[str] = None, master: bool = False) -> pd.DataFrame:
         pipeline = Pipeline(name=pipeline) if pipeline else None
         job = Job(id=job) if job else None
@@ -405,50 +402,50 @@ class PachydermAdapter:
             'user': 'bool',
         })
 
-    @retry('pps')
+    @retry
     def create_pipeline(self, pipeline_specs: dict) -> None:
         self.pps_stub.CreatePipeline(CreatePipelineRequest(**pipeline_specs))
 
-    @retry('pps')
+    @retry
     def update_pipeline(self, pipeline_specs: dict, reprocess: bool = False) -> None:
         self.pps_stub.CreatePipeline(CreatePipelineRequest(update=True, reprocess=reprocess, **pipeline_specs))
 
-    @retry('pps')
+    @retry
     def delete_pipeline(self, pipeline: str) -> None:
         self.pps_stub.DeletePipeline(DeletePipelineRequest(pipeline=Pipeline(name=pipeline)))
 
-    @retry('pps')
+    @retry
     def start_pipeline(self, pipeline: str) -> None:
         self.pps_stub.StartPipeline(StartPipelineRequest(pipeline=Pipeline(name=pipeline)))
 
-    @retry('pps')
+    @retry
     def stop_pipeline(self, pipeline: str) -> None:
         self.pps_stub.StopPipeline(StopPipelineRequest(pipeline=Pipeline(name=pipeline)))
 
-    @retry('pfs')
+    @retry
     def create_repo(self, repo: str, description: Optional[str] = None) -> None:
         self.pfs_stub.CreateRepo(CreateRepoRequest(repo=Repo(name=repo), description=description))
 
-    @retry('pfs')
+    @retry
     def delete_repo(self, repo: str, force: bool = False) -> None:
         self.pfs_stub.DeleteRepo(DeleteRepoRequest(repo=Repo(name=repo), force=force))
 
-    @retry('pfs')
+    @retry
     def delete_commit(self, repo: str, commit: str) -> None:
         self.pfs_stub.DeleteCommit(DeleteCommitRequest(commit=Commit(repo=Repo(name=repo), id=commit)))
 
-    @retry('pfs')
+    @retry
     def create_branch(self, repo: str, commit: str, branch: str) -> None:
         repo = Repo(name=repo)
         commit = Commit(repo=repo, id=commit)
         branch = Branch(repo=repo, name=branch)
         self.pfs_stub.CreateBranch(CreateBranchRequest(head=commit, branch=branch))
 
-    @retry('pfs')
+    @retry
     def delete_branch(self, repo: str, branch: str) -> None:
         self.pfs_stub.DeleteBranch(DeleteBranchRequest(branch=Branch(repo=Repo(name=repo), name=branch)))
 
-    @retry('pfs')
+    @retry
     def get_file(self, repo: str, path: str, branch: Optional[str] = 'master', commit: Optional[str] = None) -> Generator[bytes, None, None]:
         if commit is None and branch is not None:
             commit = self.list_branch_heads(repo).get(branch)
@@ -457,7 +454,7 @@ class PachydermAdapter:
         for content in response:
             yield content.value
 
-    @retry('version')
+    @retry
     def get_version(self) -> str:
         version = self.version_stub.GetVersion(Version())
         return f'{version.major}.{version.minor}.{version.micro}'
@@ -497,27 +494,27 @@ class PachydermCommitAdapter:
         """Whether the commit is finished."""
         return self._finished
 
-    @retry('pfs')
+    @retry
     def start(self):
         """Start the commit."""
         self._raise_if_finished()
         parent_commit = Commit(repo=Repo(name=self.repo), id=self.parent_commit)
-        self.adapter.pfs_stub.StartCommit(StartCommitRequest(parent=parent_commit, branch=self.branch))
+        self._commit = self.adapter.pfs_stub.StartCommit(StartCommitRequest(parent=parent_commit, branch=self.branch))
 
-    @retry('pfs')
+    @retry
     def finish(self):
         """Finish the commit."""
         self._raise_if_finished()
         self.adapter.pfs_stub.FinishCommit(FinishCommitRequest(commit=self._commit))
         self._finished = True
 
-    @retry('pfs')
+    @retry
     def delete(self):
         """Delete the commit."""
         self.adapter.pfs_stub.DeleteCommit(DeleteCommitRequest(commit=self._commit))
         self._finished = True
 
-    @retry('pfs')
+    @retry
     def put_file_bytes(self, value: Union[str, bytes], path: str, encoding: str = 'utf-8',
                        delimiter: Optional[str] = None, target_file_datums: int = 0, target_file_bytes: int = 0) -> None:
         """Uploads a string or bytes `value` to a file in the given `path` in PFS.
@@ -552,7 +549,7 @@ class PachydermCommitAdapter:
 
         self.adapter.pfs_stub.PutFile(_blocks(value))
 
-    @retry('pfs')
+    @retry
     def put_file_url(self, url: str, path: str, recursive: bool = False) -> None:
         """Uploads a file using the content found at a URL.
 
@@ -567,7 +564,7 @@ class PachydermCommitAdapter:
         file = File(commit=self._commit, path=path)
         self.adapter.pfs_stub.PutFile(iter([PutFileRequest(file=file, url=url, recursive=recursive)]))
 
-    @retry('pfs')
+    @retry
     def delete_file(self, path: str) -> None:
         """Deletes the file found in a given `path` in PFS, if it exists.
 
@@ -577,7 +574,7 @@ class PachydermCommitAdapter:
         self._raise_if_finished()
         self.adapter.pfs_stub.DeleteFile(DeleteFileRequest(file=File(commit=self._commit, path=path)))
 
-    @retry('pfs')
+    @retry
     def create_branch(self, branch: str) -> None:
         """Sets this commit as a branch.
 
@@ -587,7 +584,7 @@ class PachydermCommitAdapter:
         branch = Branch(repo=Repo(name=self.repo), name=branch)
         self.adapter.pfs_stub.CreateBranch(CreateBranchRequest(head=self._commit, branch=branch))
 
-    @retry('pfs')
+    @retry
     def _list_file_paths(self, glob: str) -> List[str]:
         return [str(f.file.path) for f in self.adapter.pfs_stub.GlobFileStream(GlobFileRequest(commit=self._commit, pattern=glob))]
 
