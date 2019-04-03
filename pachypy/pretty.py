@@ -231,8 +231,9 @@ class PrettyPachydermClient(PachydermClient):
             .set_table_styles(self.table_styles) \
             .hide_index()
 
-    def get_logs(self, pipelines: WildcardFilter = '*', datum: Optional[str] = None, last_job_only: bool = True, user_only: bool = False) -> None:
-        df = super().get_logs(pipelines=pipelines, last_job_only=last_job_only, user_only=user_only)
+    def get_logs(self, pipelines: WildcardFilter = '*', datum: Optional[str] = None,
+                 last_job_only: bool = True, user_only: bool = False, master: bool = False) -> None:
+        df = super().get_logs(pipelines=pipelines, last_job_only=last_job_only, user_only=user_only, master=master)
         job = None
         worker = None
         for _, row in df.iterrows():
@@ -372,18 +373,24 @@ def _format_datum_state(s: str) -> str:
 
 
 def _format_datetime(d: datetime) -> str:
+    if pd.isna(d):
+        return ''
     td = (datetime.now().date() - d.date()).days
     word = {-1: 'Tomorrow', 0: 'Today', 1: 'Yesterday'}
     return (word[td] if td in word else '{:%-d %b %Y}'.format(d)) + ' at {:%H:%M}'.format(d)
 
 
 def _format_date(d: date) -> str:
+    if pd.isna(d):
+        return ''
     td = (datetime.now().date() - d).days
     word = {-1: 'Tomorrow', 0: 'Today', 1: 'Yesterday'}
     return word[td] if td in word else '{:%-d %b %Y}'.format(d)
 
 
 def _format_duration(secs: float) -> str:
+    if pd.isna(secs):
+        return ''
     d = relativedelta(seconds=int(secs), microseconds=int((secs % 1) * 1e6))
     attrs = {
         'years': 'years',

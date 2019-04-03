@@ -5,15 +5,6 @@ from typing import List, Dict, Generator, Union, Optional, TypeVar, cast
 
 import grpc
 import pandas as pd
-from python_pachyderm.client.pps.pps_pb2 import (
-    Pipeline, Job,
-    ListPipelineRequest, ListJobRequest, ListDatumRequest, GetLogsRequest,
-    CreatePipelineRequest, DeletePipelineRequest, StartPipelineRequest, StopPipelineRequest,
-    FAILED as DATUM_FAILED, SUCCESS as DATUM_SUCCESS, SKIPPED as DATUM_SKIPPED, STARTING as DATUM_STARTING,
-    JOB_STARTING, JOB_RUNNING, JOB_FAILURE, JOB_SUCCESS, JOB_KILLED,
-    PIPELINE_STARTING, PIPELINE_RUNNING, PIPELINE_RESTARTING, PIPELINE_FAILURE, PIPELINE_PAUSED, PIPELINE_STANDBY,
-)
-from python_pachyderm.client.pps.pps_pb2_grpc import APIStub as PpsAPIStub
 from python_pachyderm.client.pfs.pfs_pb2 import (
     Repo, Commit, Branch, File,
     ListRepoRequest, ListCommitRequest, ListBranchRequest, GlobFileRequest, GetFileRequest,
@@ -25,6 +16,15 @@ from python_pachyderm.client.pfs.pfs_pb2 import (
     NONE as DELIMITER_NONE, JSON as DELIMITER_JSON, LINE as DELIMITER_LINE, SQL as DELIMITER_SQL, CSV as DELIMITER_CSV
 )
 from python_pachyderm.client.pfs.pfs_pb2_grpc import APIStub as PfsAPIStub
+from python_pachyderm.client.pps.pps_pb2 import (
+    Pipeline, Job,
+    ListPipelineRequest, ListJobRequest, ListDatumRequest, GetLogsRequest,
+    CreatePipelineRequest, DeletePipelineRequest, StartPipelineRequest, StopPipelineRequest,
+    FAILED as DATUM_FAILED, SUCCESS as DATUM_SUCCESS, SKIPPED as DATUM_SKIPPED, STARTING as DATUM_STARTING,
+    JOB_STARTING, JOB_RUNNING, JOB_FAILURE, JOB_SUCCESS, JOB_KILLED,
+    PIPELINE_STARTING, PIPELINE_RUNNING, PIPELINE_RESTARTING, PIPELINE_FAILURE, PIPELINE_PAUSED, PIPELINE_STANDBY,
+)
+from python_pachyderm.client.pps.pps_pb2_grpc import APIStub as PpsAPIStub
 from python_pachyderm.client.version.versionpb.version_pb2 import Version
 from python_pachyderm.client.version.versionpb.version_pb2_grpc import APIStub as VersionAPIStub
 
@@ -89,10 +89,6 @@ class PachydermAdapter:
 
         self.host = host
         self.port = port
-        # self.channels = {
-        #     c: grpc.insecure_channel(f'{host}:{port}')
-        #     for c in ['pfs', 'pps', 'version']
-        # }
         self.channel = grpc.insecure_channel(f'{host}:{port}')
         self.pfs_stub = PfsAPIStub(self.channel)
         self.pps_stub = PpsAPIStub(self.channel)
@@ -600,8 +596,11 @@ def _invert_dict(d: Dict[str, str]) -> Dict[str, List[str]]:
     return inverted
 
 
-def _to_timestamp(seconds: int, nanos: int) -> pd.Timestamp:
-    return pd.Timestamp(float(f'{seconds}.{nanos}'), unit='s')
+def _to_timestamp(seconds: int, nanos: int) -> Optional[pd.Timestamp]:
+    if seconds > 0:
+        return pd.Timestamp(float(f'{seconds}.{nanos}'), unit='s')
+    else:
+        return None
 
 
 def _to_timedelta(seconds: int, nanos: int) -> pd.Timedelta:
