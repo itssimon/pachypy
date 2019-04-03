@@ -20,7 +20,7 @@ import yaml
 from tzlocal import get_localzone
 
 from .adapter import PachydermAdapter, PachydermCommitAdapter, PachydermException
-from .registry import AmazonECRAdapter, DockerRegistryAdapter, GCRAdapter
+from .registry import ContainerRegistryAdapter, DockerRegistryAdapter, AmazonECRAdapter, GCRAdapter
 
 WildcardFilter = Optional[Union[str, Iterable[str]]]
 FileGlob = Optional[Union[str, Path, Iterable[Union[str, Path]]]]
@@ -31,82 +31,6 @@ class PachydermClientException(PachydermException):
 
     def __init__(self, message):
         super().__init__(message)
-
-
-class PachydermCommit(PachydermCommitAdapter):
-
-    """Represents a commit in Pachyderm.
-
-    Objects of this class are typically created via :meth:`~pachypy.client.PachydermClient.commit`
-    and used as a context manager, which automatically starts and finishes a commit.
-    """
-
-    def put_file(self, file: Union[str, Path, IO], path: Optional[str] = None,
-                 delimiter: str = 'none', target_file_datums: int = 0, target_file_bytes: int = 0) -> None:
-        """Uploads a file or the content of a file-like to the given `path` in PFS.
-
-        Args:
-            file: A local file path or a file-like object.
-            path: PFS path to upload file to. Defaults to the root directory.
-                If `path` ends with a slash (/), the basename of `file` will be appended.
-                If `file` is a file-like object, `path` needs to be the full PFS path including filename.
-            delimiter: Causes data to be broken up into separate files with `path` as a prefix.
-                Possible values are 'none' (default), 'json', 'line', 'sql' and 'csv'.
-            target_file_datum: Specifies the target number of datums in each written file.
-                It may be lower if data does not split evenly, but will never be higher, unless the value is 0 (default).
-            target_file_bytes: Specifies the target number of bytes in each written file.
-                Files may have more or fewer bytes than the target.
-        """
-        if isinstance(file, (str, Path)):
-            if path is None:
-                path = '/'
-            if path.endswith('/'):
-                path = path + os.path.basename(file)
-            with open(Path(file).expanduser().resolve(), 'rb') as f:
-                self.put_file_bytes(f.read(), path, delimiter=delimiter, target_file_datums=target_file_datums, target_file_bytes=target_file_bytes)
-        else:
-            if path is None or path.endswith('/'):
-                raise ValueError('path needs to be specified (including filename)')
-            self.put_file_bytes(file.read(), path, delimiter=delimiter, target_file_datums=target_file_datums, target_file_bytes=target_file_bytes)  # type: ignore
-
-    def put_files(self, files: FileGlob, path: str = '/') -> List[str]:
-        """Uploads one or multiple files defined by `files` to the given `path` in PFS.
-
-        Directory structure is not maintained. All files are uploaded into the same directory.
-
-        Args:
-            files: Glob pattern(s) to files that should be uploaded.
-            path: PFS path to upload files to. Must be a directory.
-                Will be created if it doesn't exist. Defaults to the root directory.
-
-        Returns:
-            Local paths of uploaded files.
-        """
-        files = _expand_files(files)
-        for file in files:
-            file_path = os.path.join(path, os.path.basename(file))
-            self.put_file(file, file_path)
-        return files
-
-    def delete_files(self, glob: str) -> List[str]:
-        """Deletes all files matching `glob` in the current commit.
-
-        Args:
-            glob: Glob pattern to filter files to delete.
-
-        Returns:
-            PFS paths of deleted files.
-        """
-        files = self._list_file_paths(glob)
-        for path in files:
-            self.delete_file(path)
-        return files
-
-    def __str__(self) -> str:
-        return self.commit or ''
-
-    def __repr__(self) -> str:
-        return f"{self.__class__.__name__}('{self.commit or ''}')"
 
 
 class PachydermClient:
@@ -145,7 +69,7 @@ class PachydermClient:
         self.logger.debug(f'Created client for Pachyderm cluster at {self.adapter.host}:{self.adapter.port}')
 
     @property
-    def logger(self):
+    def logger(self) -> logging.Logger:
         if self._logger is None:
             self._logger = logging.getLogger('pachypy')
         return self._logger
@@ -159,7 +83,7 @@ class PachydermClient:
         self._pipeline_spec_files = files
 
     @property
-    def docker_registry_adapter(self):
+    def docker_registry_adapter(self) -> DockerRegistryAdapter:
         if self._docker_registry_adapter is None:
             self._docker_registry_adapter = DockerRegistryAdapter()
         return self._docker_registry_adapter
@@ -169,7 +93,7 @@ class PachydermClient:
         self._docker_registry_adapter = adapter
 
     @property
-    def ecr_adapter(self):
+    def ecr_adapter(self) -> AmazonECRAdapter:
         if self._ecr_adapter is None:
             self._ecr_adapter = AmazonECRAdapter()
         return self._ecr_adapter
@@ -179,7 +103,7 @@ class PachydermClient:
         self._ecr_adapter = adapter
 
     @property
-    def gcr_adapter(self):
+    def gcr_adapter(self) -> GCRAdapter:
         if self._gcr_adapter is None:
             self._gcr_adapter = GCRAdapter()
         return self._gcr_adapter
@@ -187,6 +111,10 @@ class PachydermClient:
     @gcr_adapter.setter
     def gcr_adapter(self, adapter: GCRAdapter):
         self._gcr_adapter = adapter
+
+    @property
+    def pachd_version(self) -> str:
+        return self.adapter.get_version()
 
     def list_repos(self, repos: WildcardFilter = '*') -> pd.DataFrame:
         """Get list of repos as pandas DataFrame.
@@ -297,19 +225,21 @@ class PachydermClient:
         df = self.adapter.list_datums(job)
         return df.set_index('datum')[['job', 'state', 'repo', 'path', 'type', 'size_bytes', 'commit', 'committed']].sort_index()
 
-    def get_logs(self, pipelines: WildcardFilter = '*', datum: Optional[str] = None, last_job_only: bool = True, user_only: bool = False) -> pd.DataFrame:
+    def get_logs(self, pipelines: WildcardFilter = '*', datum: Optional[str] = None,
+                 last_job_only: bool = True, user_only: bool = False, master: bool = False) -> pd.DataFrame:
         """Get logs for jobs.
 
         Args:
             pipelines: Pattern to filter logs by pipeline name. Supports shell-style wildcards.
             datum: If specified logs are filtered to a datum ID.
             last_job_only: Whether to only show/return logs for the last job of each pipeline.
-            user_only: Whether to only show/return logs generated by user code.
+            user_only: Whether to only return logs generated by user code.
+            master: Whether to include logs from the master process.
         """
         pipeline_names = self._list_pipeline_names(pipelines)
         if len(pipeline_names) == 0:
             raise PachydermClientException(f'No pipelines matching "{pipelines}" were found.')
-        logs = [self.adapter.get_logs(pipeline=pipeline) for pipeline in pipeline_names]
+        logs = [self.adapter.get_logs(pipeline=pipeline, master=master) for pipeline in pipeline_names]
         df = pd.concat(logs, ignore_index=True).reset_index()
         df = df[df['job'].notna()]
         df['user'] = df['user'].fillna(False)
@@ -364,7 +294,7 @@ class PachydermClient:
             self.logger.info(f'Deleted repo {repo}')
         return repos
 
-    def commit(self, repo: str, branch: Optional[str] = 'master', parent_commit: Optional[str] = None) -> PachydermCommit:
+    def commit(self, repo: str, branch: Optional[str] = 'master', parent_commit: Optional[str] = None) -> 'PachydermCommit':
         """Returns a context manager for a new commit.
 
         The context manager automatically starts and finishes the commit.
@@ -381,7 +311,7 @@ class PachydermClient:
         Returns:
             Commit object allowing operations inside the commit.
         """
-        return PachydermCommit(self.adapter.pfs_client, repo, branch=branch, parent_commit=parent_commit)
+        return PachydermCommit(self.adapter, repo, branch=branch, parent_commit=parent_commit)
 
     def put_timestamp_file(self, repo: str, branch: str = 'master', overwrite: bool = True) -> None:
         """Put a timestamp file in a repository to simulate a cron tick.
@@ -683,6 +613,7 @@ class PachydermClient:
             Returns an unchanged image string if the image was not found in the registry.
         """
         repository, tag, digest = _split_image_string(image)
+        registry_adapter: ContainerRegistryAdapter
 
         if re.match(r'.+\.ecr\..+\.amazonaws\.com/.+', repository):
             registry_adapter = self.ecr_adapter
@@ -736,6 +667,82 @@ class PachydermClient:
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}('{self.adapter.host}:{self.adapter.port}')"
+
+
+class PachydermCommit(PachydermCommitAdapter):
+
+    """Represents a commit in Pachyderm.
+
+    Objects of this class are typically created via :meth:`~pachypy.client.PachydermClient.commit`
+    and used as a context manager, which automatically starts and finishes a commit.
+    """
+
+    def put_file(self, file: Union[str, Path, IO], path: Optional[str] = None,
+                 delimiter: str = 'none', target_file_datums: int = 0, target_file_bytes: int = 0) -> None:
+        """Uploads a file or the content of a file-like to the given `path` in PFS.
+
+        Args:
+            file: A local file path or a file-like object.
+            path: PFS path to upload file to. Defaults to the root directory.
+                If `path` ends with a slash (/), the basename of `file` will be appended.
+                If `file` is a file-like object, `path` needs to be the full PFS path including filename.
+            delimiter: Causes data to be broken up into separate files with `path` as a prefix.
+                Possible values are 'none' (default), 'json', 'line', 'sql' and 'csv'.
+            target_file_datum: Specifies the target number of datums in each written file.
+                It may be lower if data does not split evenly, but will never be higher, unless the value is 0 (default).
+            target_file_bytes: Specifies the target number of bytes in each written file.
+                Files may have more or fewer bytes than the target.
+        """
+        if isinstance(file, (str, Path)):
+            if path is None:
+                path = '/'
+            if path.endswith('/'):
+                path = path + os.path.basename(file)
+            with open(Path(file).expanduser().resolve(), 'rb') as f:
+                self.put_file_bytes(f.read(), path, delimiter=delimiter, target_file_datums=target_file_datums, target_file_bytes=target_file_bytes)
+        else:
+            if path is None or path.endswith('/'):
+                raise ValueError('path needs to be specified (including filename)')
+            self.put_file_bytes(file.read(), path, delimiter=delimiter, target_file_datums=target_file_datums, target_file_bytes=target_file_bytes)  # type: ignore
+
+    def put_files(self, files: FileGlob, path: str = '/') -> List[str]:
+        """Uploads one or multiple files defined by `files` to the given `path` in PFS.
+
+        Directory structure is not maintained. All files are uploaded into the same directory.
+
+        Args:
+            files: Glob pattern(s) to files that should be uploaded.
+            path: PFS path to upload files to. Must be a directory.
+                Will be created if it doesn't exist. Defaults to the root directory.
+
+        Returns:
+            Local paths of uploaded files.
+        """
+        files = _expand_files(files)
+        for file in files:
+            file_path = os.path.join(path, os.path.basename(file))
+            self.put_file(file, file_path)
+        return files
+
+    def delete_files(self, glob: str) -> List[str]:
+        """Deletes all files matching `glob` in the current commit.
+
+        Args:
+            glob: Glob pattern to filter files to delete.
+
+        Returns:
+            PFS paths of deleted files.
+        """
+        files = self._list_file_paths(glob)
+        for path in files:
+            self.delete_file(path)
+        return files
+
+    def __str__(self) -> str:
+        return self.commit or ''
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}('{self.commit or ''}')"
 
 
 def _wildcard_filter(x: Iterable[str], pattern: WildcardFilter) -> List[str]:

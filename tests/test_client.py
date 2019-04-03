@@ -41,7 +41,8 @@ def mock_list_datums(_, job):
     return df[df['job'] == job]
 
 
-def mock_get_logs(_, pipeline=None):
+def mock_get_logs(_, pipeline=None, **kwargs):
+    del kwargs
     df = get_mock_from_csv('get_logs.csv', datetime_cols=['ts'])
     return df[df['pipeline'] == pipeline] if pipeline is not None else df
 

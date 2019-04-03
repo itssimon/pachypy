@@ -1,32 +1,32 @@
 import os
 import time
 import json
-from typing import List, Dict, Generator, Union, Optional, TypeVar, cast
+from typing import List, Dict, Generator, Union, Optional
 
+import grpc
 import pandas as pd
-from grpc._channel import _Rendezvous
-from python_pachyderm import PpsClient, PfsClient
 from python_pachyderm.client.pps.pps_pb2 import (
     Pipeline, Job,
-    ListJobRequest, ListDatumRequest,
-    CreatePipelineRequest, DeletePipelineRequest, StartPipelineRequest, StopPipelineRequest
-)
-from python_pachyderm.client.pfs.pfs_pb2 import (
-    Repo, Commit, Branch, File,
-    GlobFileRequest, GetFileRequest, ListCommitRequest, CreateBranchRequest, DeleteBranchRequest
-)
-from python_pachyderm.pps_client import (
+    ListPipelineRequest, ListJobRequest, ListDatumRequest, GetLogsRequest,
+    CreatePipelineRequest, DeletePipelineRequest, StartPipelineRequest, StopPipelineRequest,
     FAILED as DATUM_FAILED, SUCCESS as DATUM_SUCCESS, SKIPPED as DATUM_SKIPPED, STARTING as DATUM_STARTING,
     JOB_STARTING, JOB_RUNNING, JOB_FAILURE, JOB_SUCCESS, JOB_KILLED,
-    PIPELINE_STARTING, PIPELINE_RUNNING, PIPELINE_RESTARTING, PIPELINE_FAILURE, PIPELINE_PAUSED, PIPELINE_STANDBY
+    PIPELINE_STARTING, PIPELINE_RUNNING, PIPELINE_RESTARTING, PIPELINE_FAILURE, PIPELINE_PAUSED, PIPELINE_STANDBY,
 )
-from python_pachyderm.pfs_client import (
+from python_pachyderm.client.pps.pps_pb2_grpc import APIStub as PpsAPIStub
+from python_pachyderm.client.pfs.pfs_pb2 import (
+    Repo, Commit, Branch, File,
+    ListRepoRequest, ListCommitRequest, ListBranchRequest, GlobFileRequest, GetFileRequest,
+    CreateRepoRequest, DeleteRepoRequest,
+    CreateBranchRequest, DeleteBranchRequest,
+    StartCommitRequest, FinishCommitRequest, DeleteCommitRequest,
+    PutFileRequest, DeleteFileRequest,
     RESERVED as FILETYPE_RESERVED, FILE as FILETYPE_FILE, DIR as FILETYPE_DIR,
     NONE as DELIMITER_NONE, JSON as DELIMITER_JSON, LINE as DELIMITER_LINE, SQL as DELIMITER_SQL, CSV as DELIMITER_CSV
 )
-
-
-T = TypeVar('T')
+from python_pachyderm.client.pfs.pfs_pb2_grpc import APIStub as PfsAPIStub
+from python_pachyderm.client.version.versionpb.version_pb2 import Version
+from python_pachyderm.client.version.versionpb.version_pb2_grpc import APIStub as VersionAPIStub
 
 
 class PachydermException(Exception):
@@ -41,146 +41,26 @@ class PachydermException(Exception):
             self.status = None
 
 
-def retry(f: T) -> T:
-    def retry_wrapper(self, *args, **kwargs):
-        try:
-            return f(self, *args, **kwargs)
-        except _Rendezvous as e:
-            if e.code().value[1] == 'unavailable' and self._retries < self.max_retries:
-                if self.check_connectivity():
-                    self._retries += 1
-                    return retry_wrapper(self, *args, **kwargs)
-            raise PachydermException(e.details(), e.code())
-        else:
-            self._retries = 0
-            self._connectable = True
-    return cast(T, retry_wrapper)
-
-
-class PachydermCommitAdapter:
-
-    def __init__(self, pfs_client: PfsClient, repo: str, branch: Optional[str] = 'master', parent_commit: Optional[str] = None):
-        self.pfs_client = pfs_client
-        self.repo = repo
-        self.branch = branch
-        self.parent_commit = parent_commit
-        self.max_retries = 1
-        self._commit = None
-        self._finished = False
-        self._retries = 0
-
-    def __enter__(self):
-        self.start()
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        if exc_type is not None:
-            self.delete()
-        else:
-            self.finish()
-
-    @property
-    def commit(self) -> Optional[str]:
-        """Commit ID."""
-        if self._commit is not None:
-            return str(self._commit.id)
-        else:
-            return None
-
-    @property
-    def finished(self) -> bool:
-        """Whether the commit is finished."""
-        return self._finished
-
-    @retry
-    def start(self):
-        """Start the commit."""
-        self._raise_if_finished()
-        self._commit = self.pfs_client.start_commit(repo_name=self.repo, branch=self.branch, parent=self.parent_commit)
-
-    @retry
-    def finish(self):
-        """Finish the commit."""
-        self._raise_if_finished()
-        self.pfs_client.finish_commit(self._commit)
-        self._finished = True
-
-    @retry
-    def delete(self):
-        """Delete the commit."""
-        self.pfs_client.delete_commit(self._commit)
-        self._finished = True
-
-    @retry
-    def put_file_bytes(self, value: Union[str, bytes], path: str, encoding: str = 'utf-8',
-                       delimiter: Optional[str] = None, target_file_datums: int = 0, target_file_bytes: int = 0) -> None:
-        """Uploads a string or bytes `value` to a file in the given `path` in PFS.
-
-        Args:
-            value: The value to upload. If a string is given, it will be encoded using `encoding` (default UTF-8).
-            path: PFS path to upload file to. Needs to be the full PFS path including filename.
-            delimiter: Causes data to be broken up into separate files with `path` as a prefix.
-                Possible values are 'none' (default), 'json', 'line', 'sql' and 'csv'.
-            target_file_datum: Specifies the target number of datums in each written file.
-                It may be lower if data does not split evenly, but will never be higher, unless the value is 0 (default).
-            target_file_bytes: Specifies the target number of bytes in each written file.
-                Files may have more or fewer bytes than the target.
-        """
-        self._raise_if_finished()
-        if isinstance(value, str):
-            value = value.encode(encoding)
-        delimiter = {
-            None: DELIMITER_NONE,
-            'none': DELIMITER_NONE,
-            'json': DELIMITER_JSON,
-            'line': DELIMITER_LINE,
-            'sql': DELIMITER_SQL,
-            'csv': DELIMITER_CSV
-        }[delimiter.lower() if delimiter is not None else None]
-        self.pfs_client.put_file_bytes(self._commit, path, value,
-                                       delimiter=delimiter, target_file_datums=target_file_datums, target_file_bytes=target_file_bytes)
-
-    @retry
-    def put_file_url(self, url: str, path: str, recursive: bool = False) -> None:
-        """Uploads a file using the content found at a URL.
-
-        The URL is sent to the server which performs the request.
-
-        Args:
-            url: The URL to download content from.
-            path: PFS path to upload file to. Needs to be the full PFS path including filename.
-            recursive: Allow recursive scraping of some URL types, e.g. on s3:// URLs.
-        """
-        self._raise_if_finished()
-        self.pfs_client.put_file_url(self._commit, path, url, recursive=recursive)
-
-    @retry
-    def delete_file(self, path: str) -> None:
-        """Deletes the file found in a given `path` in PFS, if it exists.
-
-        Args:
-            path: PFS path of file to delete.
-        """
-        self._raise_if_finished()
-        self.pfs_client.delete_file(self._commit, path)
-
-    @retry
-    def create_branch(self, branch: str) -> None:
-        """Sets this commit as a branch.
-
-        Args:
-            branch: Name of the branch.
-        """
-        branch = Branch(repo=Repo(name=self.repo), name=branch)
-        self.pfs_client.stub.CreateBranch(CreateBranchRequest(head=self._commit, branch=branch))
-
-    @retry
-    def _list_file_paths(self, glob: str) -> List[str]:
-        return [str(f.file.path) for f in self.pfs_client.stub.GlobFileStream(GlobFileRequest(commit=self._commit, pattern=glob))]
-
-    def _raise_if_finished(self):
-        if self.finished:
-            raise PachydermException(f'Commit {self.commit} is already finished')
+def retry(channel: str):
+    def decorator(f):
+        def retry_wrapper(self, *args, **kwargs):
+            print(f'Trying ({self.__class__.__name__}.{f.__name__})...')
+            adapter = self.adapter if hasattr(self, 'adapter') else self
+            try:
+                return f(self, *args, **kwargs)
+            except grpc._channel._Rendezvous as e:
+                if e.code().value[1] == 'unavailable' and adapter._retries < adapter._max_retries:
+                    print('Unavailable')
+                    if adapter.check_connectivity(channel):
+                        adapter._retries += 1
+                        return retry_wrapper(self, *args, **kwargs)
+                raise PachydermException(e.details(), e.code())
+            else:
+                print('All good')
+                adapter._retries = 0
+                adapter._connectable = True
+        return retry_wrapper
+    return decorator
 
 
 class PachydermAdapter:
@@ -192,7 +72,7 @@ class PachydermAdapter:
 
     def __init__(self, host: Optional[str] = None, port: Optional[int] = None):
         if host is None:
-            host = os.getenv('PACHD_ADDRESS')
+            host = os.getenv('PACHD_ADDRESS') or os.getenv('PACHD_SERVICE_HOST')
         if host is None:
             try:
                 with open(os.path.expanduser('~/.pachyderm/config.json'), 'r') as f:
@@ -204,27 +84,26 @@ class PachydermAdapter:
             host_split = host.split(':')
             host = host_split[0]
             port = int(host_split[1])
+        if host is None:
+            host = 'localhost'
+        if port is None:
+            port = int(os.getenv('PACHD_SERVICE_PORT', 30650))
 
-        kwargs = {}
-        if host is not None:
-            kwargs['host'] = host
-        if port is not None:
-            kwargs['port'] = port
-        self.pps_client = PpsClient(**kwargs)
-        self.pfs_client = PfsClient(**kwargs)
-        self.max_retries = 1
+        self.host = host
+        self.port = port
+        self.channels = {
+            c: grpc.insecure_channel(f'{host}:{port}')
+            for c in ['pfs', 'pps', 'version']
+        }
+        self.pfs_stub = PfsAPIStub(self.channels['pfs'])
+        self.pps_stub = PpsAPIStub(self.channels['pps'])
+        self.version_stub = VersionAPIStub(self.channels['version'])
+
         self._retries = 0
+        self._max_retries = 1
         self._connectable: Optional[bool] = None
 
-    @property
-    def host(self) -> str:
-        return str(self.pps_client.channel._channel.target().decode().split(':')[0])
-
-    @property
-    def port(self) -> int:
-        return int(self.pps_client.channel._channel.target().decode().split(':')[1])
-
-    def check_connectivity(self, timeout: float = 10.0) -> bool:
+    def check_connectivity(self, channel: str = 'pfs', timeout: float = 10.0) -> bool:
         """Checks the connectivity to pachd. Tries to connect if not currently connected.
 
         The gRPC channel connectivity knows 5 states:
@@ -236,22 +115,24 @@ class PachydermAdapter:
         Returns:
             True if the connectivity state is ready (2), False otherwise.
         """
+        print(f'Checking connectivity of {channel} channel...')
         connectivity = 0
         timeout = time.time() + timeout
-        connectivity = self.pfs_client.channel._channel.check_connectivity_state(True)
+        connectivity = self.channels[channel]._channel.check_connectivity_state(True)
         while connectivity < 2:
             if time.time() > timeout:
                 connectivity = 5
                 break
             time.sleep(0.001)
-            connectivity = self.pfs_client.channel._channel.check_connectivity_state(False)
+            connectivity = self.channels[channel]._channel.check_connectivity_state(False)
         self._connectable = connectivity == 2
+        print('Success!' if self._connectable else 'No connectivity.')
         return self._connectable
 
-    @retry
+    @retry('pfs')
     def list_repos(self) -> pd.DataFrame:
         res = []
-        for repo in self.pfs_client.list_repo():
+        for repo in self.pfs_stub.ListRepo(ListRepoRequest()).repo_info:
             res.append({
                 'repo': repo.repo.name,
                 'size_bytes': repo.size_bytes,
@@ -261,20 +142,23 @@ class PachydermAdapter:
         return pd.DataFrame(res, columns=['repo', 'size_bytes', 'branches', 'created']) \
             .astype({'size_bytes': 'int', 'created': 'datetime64[ns]'})
 
-    @retry
+    @retry('pfs')
     def list_repo_names(self) -> List[str]:
-        return [r.repo.name for r in self.pfs_client.list_repo()]
+        repos = self.pfs_stub.ListRepo(ListRepoRequest()).repo_info
+        return [r.repo.name for r in repos]
 
-    @retry
+    @retry('pfs')
     def list_branch_heads(self, repo: str) -> Dict[str, str]:
-        return {b.branch.name: b.head.id for b in self.pfs_client.list_branch(repo)}
+        branches = self.pfs_stub.ListBranch(ListBranchRequest(repo=Repo(name=repo))).branch_info
+        return {b.branch.name: b.head.id for b in branches}
 
-    @retry
+    @retry('pfs')
     def list_commits(self, repo: str, n: int = 20) -> pd.DataFrame:
         i = 1
         res = []
-        commit_branches = _commit_branches(self.list_branch_heads(repo))
-        for commit in self.pfs_client.stub.ListCommitStream(ListCommitRequest(repo=Repo(name=repo))):
+        commit_branches = _invert_dict(self.list_branch_heads(repo))
+        stream = self.pfs_stub.ListCommitStream(ListCommitRequest(repo=Repo(name=repo)))
+        for commit in stream:
             res.append({
                 'repo': commit.commit.repo.name,
                 'commit': commit.commit.id,
@@ -286,11 +170,12 @@ class PachydermAdapter:
             })
             i += 1
             if n is not None and i > n:
+                stream.cancel()
                 break
         return pd.DataFrame(res, columns=['repo', 'commit', 'branches', 'size_bytes', 'started', 'finished', 'parent_commit']) \
             .astype({'size_bytes': 'int', 'started': 'datetime64[ns]', 'finished': 'datetime64[ns]'})
 
-    @retry
+    @retry('pfs')
     def list_files(self, repo: str, branch: Optional[str] = 'master', commit: Optional[str] = None, glob: str = '**') -> pd.DataFrame:
         if branch is None and commit is None:
             raise ValueError('branch and commit cannot both be None')
@@ -301,12 +186,12 @@ class PachydermAdapter:
         }
         res = []
         branch_heads = self.list_branch_heads(repo)
-        commit_branches = _commit_branches(branch_heads)
+        commit_branches = _invert_dict(branch_heads)
         if commit is None and branch is not None:
             commit = branch_heads.get(branch)
         if commit is not None:
             commit = Commit(repo=Repo(name=repo), id=commit)
-            for file in self.pfs_client.stub.GlobFileStream(GlobFileRequest(commit=commit, pattern=glob)):
+            for file in self.pfs_stub.GlobFileStream(GlobFileRequest(commit=commit, pattern=glob)):
                 res.append({
                     'repo': file.file.commit.repo.name,
                     'commit': file.file.commit.id,
@@ -319,7 +204,7 @@ class PachydermAdapter:
         return pd.DataFrame(res, columns=['repo', 'commit', 'branches', 'path', 'type', 'size_bytes', 'committed']) \
             .astype({'size_bytes': 'int', 'committed': 'datetime64[ns]'})
 
-    @retry
+    @retry('pps')
     def list_pipelines(self) -> pd.DataFrame:
         state_mapping = {
             PIPELINE_STARTING: 'starting',
@@ -370,7 +255,8 @@ class PachydermAdapter:
                 yield i.pfs.repo
 
         res = []
-        for pipeline in self.pps_client.list_pipeline().pipeline_info:
+        pipelines = self.pps_stub.ListPipeline(ListPipelineRequest()).pipeline_info
+        for pipeline in pipelines:
             res.append({
                 'pipeline': pipeline.pipeline.name,
                 'image': pipeline.transform.image,
@@ -402,11 +288,12 @@ class PachydermAdapter:
             'created': 'datetime64[ns]',
         })
 
-    @retry
+    @retry('pps')
     def list_pipeline_names(self) -> List[str]:
-        return [p.pipeline.name for p in self.pps_client.list_pipeline().pipeline_info]
+        pipelines = self.pps_stub.ListPipeline(ListPipelineRequest()).pipeline_info
+        return [p.pipeline.name for p in pipelines]
 
-    @retry
+    @retry('pps')
     def list_jobs(self, pipeline: Optional[str] = None, n: int = 20) -> pd.DataFrame:
         state_mapping = {
             JOB_STARTING: 'starting',
@@ -417,7 +304,8 @@ class PachydermAdapter:
         }
         i = 1
         res = []
-        for job in self.pps_client.stub.ListJobStream(ListJobRequest(pipeline=Pipeline(name=pipeline))):
+        jobs_stream = self.pps_stub.ListJobStream(ListJobRequest(pipeline=Pipeline(name=pipeline)))
+        for job in jobs_stream:
             res.append({
                 'job': job.job.id,
                 'pipeline': job.pipeline.name,
@@ -437,6 +325,7 @@ class PachydermAdapter:
             })
             i += 1
             if n is not None and i > n:
+                jobs_stream.cancel()
                 break
         return pd.DataFrame(res, columns=[
             'job', 'pipeline', 'state', 'started', 'finished', 'restart',
@@ -457,7 +346,7 @@ class PachydermAdapter:
             'upload_bytes': 'float',
         })
 
-    @retry
+    @retry('pps')
     def list_datums(self, job: str) -> pd.DataFrame:
         state_mapping = {
             DATUM_FAILED: 'failed',
@@ -471,7 +360,8 @@ class PachydermAdapter:
             FILETYPE_DIR: 'dir',
         }
         res = []
-        for datum in self.pps_client.stub.ListDatumStream(ListDatumRequest(job=Job(id=job))):
+        datums_stream = self.pps_stub.ListDatumStream(ListDatumRequest(job=Job(id=job)))
+        for datum in datums_stream:
             for data in datum.datum_info.data:
                 res.append({
                     'job': datum.datum_info.datum.job.id,
@@ -487,10 +377,15 @@ class PachydermAdapter:
         return pd.DataFrame(res, columns=['job', 'datum', 'state', 'repo', 'path', 'type', 'size_bytes', 'commit', 'committed']) \
             .astype({'size_bytes': 'int', 'committed': 'datetime64[ns]'})
 
-    @retry
+    @retry('pps')
     def get_logs(self, pipeline: Optional[str] = None, job: Optional[str] = None, master: bool = False) -> pd.DataFrame:
+        pipeline = Pipeline(name=pipeline) if pipeline else None
+        job = Job(id=job) if job else None
+        if pipeline is None and job is None:
+            raise ValueError('One of `pipeline` or `job` must be specified')
         res = []
-        for msg in self.pps_client.get_logs(pipeline_name=pipeline, job_id=job, master=master):
+        logs = self.pps_stub.GetLogs(GetLogsRequest(pipeline=pipeline, job=job, data_filters=tuple(), master=master))
+        for msg in logs:
             message = msg.message.strip()
             if message:
                 res.append({
@@ -510,63 +405,202 @@ class PachydermAdapter:
             'user': 'bool',
         })
 
-    @retry
+    @retry('pps')
     def create_pipeline(self, pipeline_specs: dict) -> None:
-        self.pps_client.stub.CreatePipeline(CreatePipelineRequest(**pipeline_specs))
+        self.pps_stub.CreatePipeline(CreatePipelineRequest(**pipeline_specs))
 
-    @retry
+    @retry('pps')
     def update_pipeline(self, pipeline_specs: dict, reprocess: bool = False) -> None:
-        self.pps_client.stub.CreatePipeline(CreatePipelineRequest(update=True, reprocess=reprocess, **pipeline_specs))
+        self.pps_stub.CreatePipeline(CreatePipelineRequest(update=True, reprocess=reprocess, **pipeline_specs))
 
-    @retry
+    @retry('pps')
     def delete_pipeline(self, pipeline: str) -> None:
-        self.pps_client.stub.DeletePipeline(DeletePipelineRequest(pipeline=Pipeline(name=pipeline)))
+        self.pps_stub.DeletePipeline(DeletePipelineRequest(pipeline=Pipeline(name=pipeline)))
 
-    @retry
+    @retry('pps')
     def start_pipeline(self, pipeline: str) -> None:
-        self.pps_client.stub.StartPipeline(StartPipelineRequest(pipeline=Pipeline(name=pipeline)))
+        self.pps_stub.StartPipeline(StartPipelineRequest(pipeline=Pipeline(name=pipeline)))
 
-    @retry
+    @retry('pps')
     def stop_pipeline(self, pipeline: str) -> None:
-        self.pps_client.stub.StopPipeline(StopPipelineRequest(pipeline=Pipeline(name=pipeline)))
+        self.pps_stub.StopPipeline(StopPipelineRequest(pipeline=Pipeline(name=pipeline)))
 
-    @retry
+    @retry('pfs')
     def create_repo(self, repo: str, description: Optional[str] = None) -> None:
-        self.pfs_client.create_repo(repo, description=description)
+        self.pfs_stub.CreateRepo(CreateRepoRequest(repo=Repo(name=repo), description=description))
 
-    @retry
-    def delete_repo(self, repo: str) -> None:
-        self.pfs_client.delete_repo(repo)
+    @retry('pfs')
+    def delete_repo(self, repo: str, force: bool = False) -> None:
+        self.pfs_stub.DeleteRepo(DeleteRepoRequest(repo=Repo(name=repo), force=force))
 
-    @retry
+    @retry('pfs')
     def delete_commit(self, repo: str, commit: str) -> None:
-        self.pfs_client.delete_commit(Commit(repo=Repo(name=repo), id=commit))
+        self.pfs_stub.DeleteCommit(DeleteCommitRequest(commit=Commit(repo=Repo(name=repo), id=commit)))
 
-    @retry
+    @retry('pfs')
     def create_branch(self, repo: str, commit: str, branch: str) -> None:
         repo = Repo(name=repo)
         commit = Commit(repo=repo, id=commit)
         branch = Branch(repo=repo, name=branch)
-        self.pfs_client.stub.CreateBranch(CreateBranchRequest(head=commit, branch=branch))
+        self.pfs_stub.CreateBranch(CreateBranchRequest(head=commit, branch=branch))
 
-    @retry
+    @retry('pfs')
     def delete_branch(self, repo: str, branch: str) -> None:
-        self.pfs_client.stub.DeleteBranch(DeleteBranchRequest(branch=Branch(repo=Repo(name=repo), name=branch)))
+        self.pfs_stub.DeleteBranch(DeleteBranchRequest(branch=Branch(repo=Repo(name=repo), name=branch)))
 
-    @retry
+    @retry('pfs')
     def get_file(self, repo: str, path: str, branch: Optional[str] = 'master', commit: Optional[str] = None) -> Generator[bytes, None, None]:
         if commit is None and branch is not None:
             commit = self.list_branch_heads(repo).get(branch)
-        response = self.pfs_client.stub.GetFile(GetFileRequest(file=File(commit=Commit(repo=Repo(name=repo), id=commit), path=path)))
+        file = File(commit=Commit(repo=Repo(name=repo), id=commit), path=path)
+        response = self.pfs_stub.GetFile(GetFileRequest(file=file))
         for content in response:
             yield content.value
 
+    @retry('version')
+    def get_version(self) -> str:
+        version = self.version_stub.GetVersion(Version())
+        return f'{version.major}.{version.minor}.{version.micro}'
 
-def _commit_branches(branch_heads: Dict[str, str]) -> Dict[str, List[str]]:
-    commit_branch: Dict[str, List[str]] = {head: [] for head in branch_heads.values()}
-    for branch, head in branch_heads.items():
-        commit_branch[head].append(branch)
-    return commit_branch
+
+class PachydermCommitAdapter:
+
+    def __init__(self, adapter: PachydermAdapter, repo: str, branch: Optional[str] = 'master', parent_commit: Optional[str] = None):
+        self.adapter = adapter
+        self.repo = repo
+        self.branch = branch
+        self.parent_commit = parent_commit
+        self._commit = None
+        self._finished = False
+        self._buffer_size = 3 * 1024 * 1024  # 3 MB
+
+    def __enter__(self):
+        self.start()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type is not None:
+            self.delete()
+        else:
+            self.finish()
+
+    @property
+    def commit(self) -> Optional[str]:
+        """Commit ID."""
+        if self._commit is not None:
+            return str(self._commit.id)
+        else:
+            return None
+
+    @property
+    def finished(self) -> bool:
+        """Whether the commit is finished."""
+        return self._finished
+
+    @retry('pfs')
+    def start(self):
+        """Start the commit."""
+        self._raise_if_finished()
+        parent_commit = Commit(repo=Repo(name=self.repo), id=self.parent_commit)
+        self.adapter.pfs_stub.StartCommit(StartCommitRequest(parent=parent_commit, branch=self.branch))
+
+    @retry('pfs')
+    def finish(self):
+        """Finish the commit."""
+        self._raise_if_finished()
+        self.adapter.pfs_stub.FinishCommit(FinishCommitRequest(commit=self._commit))
+        self._finished = True
+
+    @retry('pfs')
+    def delete(self):
+        """Delete the commit."""
+        self.adapter.pfs_stub.DeleteCommit(DeleteCommitRequest(commit=self._commit))
+        self._finished = True
+
+    @retry('pfs')
+    def put_file_bytes(self, value: Union[str, bytes], path: str, encoding: str = 'utf-8',
+                       delimiter: Optional[str] = None, target_file_datums: int = 0, target_file_bytes: int = 0) -> None:
+        """Uploads a string or bytes `value` to a file in the given `path` in PFS.
+
+        Args:
+            value: The value to upload. If a string is given, it will be encoded using `encoding` (default UTF-8).
+            path: PFS path to upload file to. Needs to be the full PFS path including filename.
+            delimiter: Causes data to be broken up into separate files with `path` as a prefix.
+                Possible values are 'none' (default), 'json', 'line', 'sql' and 'csv'.
+            target_file_datum: Specifies the target number of datums in each written file.
+                It may be lower if data does not split evenly, but will never be higher, unless the value is 0 (default).
+            target_file_bytes: Specifies the target number of bytes in each written file.
+                Files may have more or fewer bytes than the target.
+        """
+        self._raise_if_finished()
+        if isinstance(value, str):
+            value = value.encode(encoding)
+        delimiter = {
+            None: DELIMITER_NONE,
+            'none': DELIMITER_NONE,
+            'json': DELIMITER_JSON,
+            'line': DELIMITER_LINE,
+            'sql': DELIMITER_SQL,
+            'csv': DELIMITER_CSV
+        }[delimiter.lower() if delimiter is not None else None]
+        file = File(commit=self._commit, path=path)
+
+        def _blocks(v):
+            for i in range(0, len(v), self._buffer_size):
+                yield PutFileRequest(file=file, value=v[i:i + self._buffer_size], delimiter=delimiter,
+                                     target_file_datums=target_file_datums, target_file_bytes=target_file_bytes)
+
+        self.adapter.pfs_stub.PutFile(_blocks(value))
+
+    @retry('pfs')
+    def put_file_url(self, url: str, path: str, recursive: bool = False) -> None:
+        """Uploads a file using the content found at a URL.
+
+        The URL is sent to the server which performs the request.
+
+        Args:
+            url: The URL to download content from.
+            path: PFS path to upload file to. Needs to be the full PFS path including filename.
+            recursive: Allow recursive scraping of some URL types, e.g. on s3:// URLs.
+        """
+        self._raise_if_finished()
+        file = File(commit=self._commit, path=path)
+        self.adapter.pfs_stub.PutFile(iter([PutFileRequest(file=file, url=url, recursive=recursive)]))
+
+    @retry('pfs')
+    def delete_file(self, path: str) -> None:
+        """Deletes the file found in a given `path` in PFS, if it exists.
+
+        Args:
+            path: PFS path of file to delete.
+        """
+        self._raise_if_finished()
+        self.adapter.pfs_stub.DeleteFile(DeleteFileRequest(file=File(commit=self._commit, path=path)))
+
+    @retry('pfs')
+    def create_branch(self, branch: str) -> None:
+        """Sets this commit as a branch.
+
+        Args:
+            branch: Name of the branch.
+        """
+        branch = Branch(repo=Repo(name=self.repo), name=branch)
+        self.adapter.pfs_stub.CreateBranch(CreateBranchRequest(head=self._commit, branch=branch))
+
+    @retry('pfs')
+    def _list_file_paths(self, glob: str) -> List[str]:
+        return [str(f.file.path) for f in self.adapter.pfs_stub.GlobFileStream(GlobFileRequest(commit=self._commit, pattern=glob))]
+
+    def _raise_if_finished(self):
+        if self.finished:
+            raise PachydermException(f'Commit {self.commit} is already finished')
+
+
+def _invert_dict(d: Dict[str, str]) -> Dict[str, List[str]]:
+    inverted: Dict[str, List[str]] = {}
+    for key, value in d.items():
+        inverted.setdefault(value, []).append(key)
+    return inverted
 
 
 def _to_timestamp(seconds: int, nanos: int) -> pd.Timestamp:

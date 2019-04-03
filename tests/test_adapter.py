@@ -9,9 +9,7 @@ from pachypy.adapter import PachydermAdapter, PachydermCommitAdapter, PachydermE
 
 @pytest.fixture(scope='module')
 def adapter() -> PachydermAdapter:
-    adapter = PachydermAdapter()
-    setattr(adapter, 'pachyderm_available', None)
-    return adapter
+    return PachydermAdapter('localhost', 30650)
 
 
 @pytest.fixture(scope='function')
@@ -246,17 +244,17 @@ def test_stop_start_pipeline(adapter: PachydermAdapter, pipeline_1):
     assert await_pipeline_new_state(adapter, pipeline_name, initial_state='paused') == 'running'
 
 
-def test_commit_branches():
-    from pachypy.adapter import _commit_branches
-    assert _commit_branches({'a': '1'}) == {'1': ['a']}
-    assert _commit_branches({'a': '1', 'b': '1'}) == {'1': ['a', 'b']}
-    assert _commit_branches({'a': '1', 'b': '2'}) == {'1': ['a'], '2': ['b']}
+def test_invert_dict():
+    from pachypy.adapter import _invert_dict
+    assert _invert_dict({'a': '1'}) == {'1': ['a']}
+    assert _invert_dict({'a': '1', 'b': '1'}) == {'1': ['a', 'b']}
+    assert _invert_dict({'a': '1', 'b': '2'}) == {'1': ['a'], '2': ['b']}
 
 
 def test_commit_context_manager(adapter: PachydermAdapter, repo):
     skip_if_pachyderm_unavailable(adapter)
 
-    c = PachydermCommitAdapter(adapter.pfs_client, repo)
+    c = PachydermCommitAdapter(adapter, repo)
     assert c.commit is None and c.finished is False
     assert len(adapter.list_commits(repo)) == 0
     with c:
@@ -270,7 +268,7 @@ def test_commit_context_manager(adapter: PachydermAdapter, repo):
     assert len(adapter.list_commits(repo)) == 1
 
     with pytest.raises(OSError):
-        with PachydermCommitAdapter(adapter.pfs_client, repo) as c:
+        with PachydermCommitAdapter(adapter, repo) as c:
             raise OSError
     assert len(adapter.list_commits(repo)) == 1
 
@@ -278,7 +276,7 @@ def test_commit_context_manager(adapter: PachydermAdapter, repo):
 def test_commit_put_file_bytes(adapter: PachydermAdapter, repo):
     skip_if_pachyderm_unavailable(adapter)
 
-    with PachydermCommitAdapter(adapter.pfs_client, repo) as c:
+    with PachydermCommitAdapter(adapter, repo) as c:
         c.put_file_bytes('test_1', '/test_file_1')
         c.put_file_bytes('test_2', '/folder/test_file_2')
         c.put_file_bytes(b'test_3', 'test_file_3')
@@ -294,7 +292,7 @@ def test_commit_put_file_bytes(adapter: PachydermAdapter, repo):
     assert '/test_file_3' in set(files.path)
     assert '/test_file_4' not in set(files.path)
 
-    with PachydermCommitAdapter(adapter.pfs_client, repo, branch='test') as c:
+    with PachydermCommitAdapter(adapter, repo, branch='test') as c:
         c.put_file_bytes('test_5', '/test_file_5')
     files = adapter.list_files(repo, branch='test')
     assert len(files) == 1
@@ -316,7 +314,7 @@ def test_commit_put_file_bytes(adapter: PachydermAdapter, repo):
 
 def test_commit_create_branch(adapter: PachydermAdapter, repo):
     skip_if_pachyderm_unavailable(adapter)
-    with PachydermCommitAdapter(adapter.pfs_client, repo) as c:
+    with PachydermCommitAdapter(adapter, repo) as c:
         c.create_branch('test_branch_1')
     adapter.create_branch(repo, c.commit, 'test_branch_2')
     branch_heads = adapter.list_branch_heads(repo)
@@ -327,7 +325,7 @@ def test_commit_create_branch(adapter: PachydermAdapter, repo):
 
 def test_commit_put_file_url(adapter: PachydermAdapter, repo):
     skip_if_pachyderm_unavailable(adapter)
-    with PachydermCommitAdapter(adapter.pfs_client, repo, branch=None) as c:
+    with PachydermCommitAdapter(adapter, repo, branch=None) as c:
         c.put_file_url('https://raw.githubusercontent.com/itssimon/pachypy/master/tests/mock/get_logs.csv', 'get_logs.csv')
     files = adapter.list_files(repo, commit=c.commit)
     commits = adapter.list_commits(repo)
@@ -344,9 +342,9 @@ def test_list_commits_files(adapter: PachydermAdapter, repo):
     assert len(adapter.list_files(repo)) == 0
 
     for _ in range(3):
-        with PachydermCommitAdapter(adapter.pfs_client, repo) as c:
+        with PachydermCommitAdapter(adapter, repo) as c:
             c.put_file_bytes(b'test', 'test')
-        with PachydermCommitAdapter(adapter.pfs_client, repo, branch='test') as c:
+        with PachydermCommitAdapter(adapter, repo, branch='test') as c:
             c.put_file_bytes(b'test', 'test')
 
     branch_heads = adapter.list_branch_heads(repo)
@@ -380,7 +378,7 @@ def test_list_jobs_get_logs(adapter: PachydermAdapter, pipeline_2):
     tick_repo_name = pipeline_name + '_' + pipeline_2['input']['cron']['name']
     assert await_pipeline_new_state(adapter, pipeline_name, initial_state='starting') == 'running'
 
-    with PachydermCommitAdapter(adapter.pfs_client, tick_repo_name) as c:
+    with PachydermCommitAdapter(adapter, tick_repo_name) as c:
         c.put_file_bytes(b'0', 'time')
     assert await_job_completed_state(adapter, pipeline_name) == 'success'
 
@@ -404,9 +402,9 @@ def test_list_jobs_get_logs(adapter: PachydermAdapter, pipeline_2):
 
 def test_get_file(adapter: PachydermAdapter, repo):
     skip_if_pachyderm_unavailable(adapter)
-    with PachydermCommitAdapter(adapter.pfs_client, repo) as c:
+    with PachydermCommitAdapter(adapter, repo) as c:
         c.put_file_bytes(b'123', '/test_file_1')
-    with PachydermCommitAdapter(adapter.pfs_client, repo, branch='test') as c:
+    with PachydermCommitAdapter(adapter, repo, branch='test') as c:
         c.put_file_bytes(b'321', '/test_file_2')
     assert next(adapter.get_file(repo, '/test_file_1')) == b'123'
     assert next(adapter.get_file(repo, '/test_file_2', branch='test')) == b'321'
