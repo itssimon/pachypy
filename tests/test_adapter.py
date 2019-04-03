@@ -160,12 +160,24 @@ def await_job_completed_state(adapter: PachydermAdapter, pipeline_name, timeout=
     return state
 
 
-def test_init():
+def test_init(monkeypatch):
+    monkeypatch.delenv('PACHD_ADDRESS', raising=False)
+    monkeypatch.delenv('PACHD_SERVICE_HOST', raising=False)
+    monkeypatch.delenv('PACHD_SERVICE_PORT', raising=False)
+
+    adapter = PachydermAdapter()
+    assert adapter.host == 'localhost' and adapter.port == 30650
     adapter = PachydermAdapter(host='test_host')
     assert adapter.host == 'test_host' and adapter.port == 30650
     with mock.patch.dict(os.environ, {'PACHD_ADDRESS': 'test_host:12345'}):
         adapter = PachydermAdapter()
         assert adapter.host == 'test_host' and adapter.port == 12345
+    with mock.patch.dict(os.environ, {'PACHD_SERVICE_HOST': 'another_test_host'}):
+        adapter = PachydermAdapter()
+        assert adapter.host == 'another_test_host' and adapter.port == 30650
+    with mock.patch.dict(os.environ, {'PACHD_SERVICE_HOST': 'another_test_host', 'PACHD_SERVICE_PORT': '12345'}):
+        adapter = PachydermAdapter()
+        assert adapter.host == 'another_test_host' and adapter.port == 12345
 
 
 def test_check_connectivity():
