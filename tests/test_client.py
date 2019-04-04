@@ -248,7 +248,6 @@ def test_commit_put_files(client: PachydermClient, **mocks):
 
 @patch_commit_adapter()
 def test_put_timestamp_file(client: PachydermClient, **mocks):
-    import json
     client.put_timestamp_file('test_repo', overwrite=True)
     mocks['delete_file'].assert_called_once()
     mocks['put_file_bytes'].assert_called_once()

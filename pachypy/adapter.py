@@ -610,9 +610,7 @@ def _pipeline_input_cron_specs(i: Input) -> Generator[Dict[str, Any], None, None
     cross_or_union = i.cross or i.union
     if cross_or_union:
         for j in cross_or_union:
-            spec = _pipeline_input_cron_specs(j)
-            if spec:
-                yield from spec
+            yield from _pipeline_input_cron_specs(j)
 
 
 def _invert_dict(d: Dict[str, str]) -> Dict[str, List[str]]:
