@@ -313,7 +313,7 @@ class PachydermClient:
         Returns:
             Commit object allowing operations inside the commit.
         """
-        return PachydermCommit(self.adapter, repo, branch=branch, parent_commit=parent_commit, flush=flush)
+        return PachydermCommit(self, repo, branch=branch, parent_commit=parent_commit, flush=flush)
 
     def put_timestamp_file(self, repo: str, branch: str = 'master', overwrite: bool = True) -> None:
         """Put a timestamp file in a repository to simulate a cron tick.
@@ -667,7 +667,8 @@ class PachydermClient:
     def _list_repo_names(self, match: WildcardFilter = None) -> List[str]:
         return _wildcard_filter(self.adapter.list_repo_names(), match)
 
-    def _progress(self, x, **kwargs):
+    @staticmethod
+    def _progress(x, **kwargs):
         del kwargs
         return x
 
@@ -682,6 +683,10 @@ class PachydermCommit(PachydermCommitAdapter):
     Objects of this class are typically created via :meth:`~pachypy.client.PachydermClient.commit`
     and used as a context manager, which automatically starts and finishes a commit.
     """
+
+    def __init__(self, client: PachydermClient, repo: str, branch: Optional[str] = 'master', parent_commit: Optional[str] = None, flush: bool = False):
+        self.client = client
+        super().__init__(client.adapter, repo, branch=branch, parent_commit=parent_commit, flush=flush)
 
     def put_file(self, file: Union[str, Path, IO], path: Optional[str] = None,
                  delimiter: str = 'none', target_file_datums: int = 0, target_file_bytes: int = 0) -> None:
@@ -725,7 +730,7 @@ class PachydermCommit(PachydermCommitAdapter):
             Local paths of uploaded files.
         """
         files = _expand_files(files)
-        for file in files:
+        for file in self.client._progress(files, unit='file'):
             file_path = os.path.join(path, os.path.basename(file))
             self.put_file(file, file_path)
         return files
