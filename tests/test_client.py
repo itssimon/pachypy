@@ -81,6 +81,7 @@ def patch_adapter():
         delete_pipeline=DEFAULT,
         start_pipeline=DEFAULT,
         stop_pipeline=DEFAULT,
+        get_pipeline_cron_specs=DEFAULT
     )
 
 
@@ -243,6 +244,27 @@ def test_commit_put_files(client: PachydermClient, **mocks):
 
         c.put_files(mock_file('*.csv'))
         assert mocks['put_file_bytes'].call_count == 7
+
+
+@patch_commit_adapter()
+def test_put_timestamp_file(client: PachydermClient, **mocks):
+    import json
+    client.put_timestamp_file('test_repo', overwrite=True)
+    mocks['delete_file'].assert_called_once()
+    mocks['put_file_bytes'].assert_called_once()
+    assert json.loads(mocks['put_file_bytes'].call_args[0][0])
+    assert mocks['put_file_bytes'].call_args[0][1] == 'time'
+
+
+@patch_commit_adapter()
+@patch_adapter()
+def test_trigger_pipeline(client: PachydermClient, **mocks):
+    mocks['get_pipeline_cron_specs'].return_value = []
+    with pytest.raises(PachydermClientException):
+        client.trigger_pipeline('pipeline_without_cron_input')
+    mocks['get_pipeline_cron_specs'].return_value = [{'repo': 'pipeline_tick'}]
+    client.trigger_pipeline('pipeline')
+    mocks['put_file_bytes'].assert_called_once()
 
 
 @patch_adapter()

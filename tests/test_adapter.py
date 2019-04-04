@@ -127,6 +127,30 @@ def pipeline_5(adapter: PachydermAdapter, repo):
     })
 
 
+@pytest.fixture(scope='function')
+def pipeline_6(adapter: PachydermAdapter):
+    yield from pipeline(adapter, {
+        'pipeline': {'name': 'test_pipeline_6'},
+        'transform': {
+            'image': 'alpine:latest',
+            'cmd': ['/bin/sh', '-c', 'cat /pfs/*/*']
+        },
+        'input': {
+            'union': [{
+                'cron': {
+                    'name': 'tick1',
+                    'spec': '0 * * * *'
+                }
+            }, {
+                'cron': {
+                    'name': 'tick2',
+                    'spec': '30 * * * *'
+                }
+            }]
+        }
+    })
+
+
 def skip_if_pachyderm_unavailable(adapter: PachydermAdapter):
     if adapter._connectable is None:
         adapter.check_connectivity()
@@ -445,3 +469,8 @@ def test_get_file(adapter: PachydermAdapter, repo):
     assert next(adapter.get_file(repo, '/test_file_1')) == b'123'
     assert next(adapter.get_file(repo, '/test_file_2', branch='test')) == b'321'
     assert next(adapter.get_file(repo, '/test_file_2', commit=c.commit)) == b'321'
+
+
+def test_pipeline_input_cron_specs(adapter: PachydermAdapter, pipeline_5, pipeline_6):
+    assert len(adapter.get_pipeline_cron_specs(pipeline_5['pipeline']['name'])) == 0
+    assert len(adapter.get_pipeline_cron_specs(pipeline_6['pipeline']['name'])) == 2

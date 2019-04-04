@@ -514,17 +514,18 @@ class PachydermClient:
             self.logger.info(f'Stopped pipeline {pipeline}')
         return pipelines
 
-    def trigger_pipeline(self, pipeline: str, input_name: str = 'tick') -> None:
-        """Trigger a cron-triggered pipeline by committing a timestamp file into its tick repository.
+    def trigger_pipeline(self, pipeline: str) -> None:
+        """Trigger a pipeline with a cron input by committing a timestamp file into its cron input repository.
 
-        This simply calls :meth:`~pachypy.client.PachydermClient.put_timestamp_file`,
-        expecting the cron input repo of the pipeline to have the default name ``<pipeline>_<input_name>``.
+        This simply calls :meth:`~pachypy.client.PachydermClient.put_timestamp_file`.
 
         Args:
             pipeline: Name of pipeline to trigger.
-            input_name: Name of the cron input. Defaults to 'tick'.
         """
-        self.put_timestamp_file(f'{pipeline}_{input_name}')
+        cron_specs = self.adapter.get_pipeline_cron_specs(pipeline)
+        if len(cron_specs) == 0:
+            raise PachydermClientException(f'Cannot trigger pipeline {pipeline} without cron input')
+        self.put_timestamp_file(cron_specs[0]['repo'])
 
     def read_pipeline_specs(self, pipelines: WildcardFilter = '*') -> List[dict]:
         """Read pipelines specs from files.

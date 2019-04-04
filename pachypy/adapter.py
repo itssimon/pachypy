@@ -1,7 +1,7 @@
 import os
 import time
 import json
-from typing import List, Dict, Generator, Union, Optional, TypeVar, cast
+from typing import List, Dict, Generator, Union, Optional, TypeVar, Any, cast
 
 import grpc
 import pandas as pd
@@ -17,9 +17,9 @@ from python_pachyderm.client.pfs.pfs_pb2 import (
 )
 from python_pachyderm.client.pfs.pfs_pb2_grpc import APIStub as PfsAPIStub
 from python_pachyderm.client.pps.pps_pb2 import (
-    Pipeline, Job,
+    Pipeline, Job, Input,
     ListPipelineRequest, ListJobRequest, ListDatumRequest, GetLogsRequest,
-    CreatePipelineRequest, DeletePipelineRequest, StartPipelineRequest, StopPipelineRequest,
+    CreatePipelineRequest, DeletePipelineRequest, StartPipelineRequest, StopPipelineRequest, InspectPipelineRequest,
     FAILED as DATUM_FAILED, SUCCESS as DATUM_SUCCESS, SKIPPED as DATUM_SKIPPED, STARTING as DATUM_STARTING,
     JOB_STARTING, JOB_RUNNING, JOB_FAILURE, JOB_SUCCESS, JOB_KILLED,
     PIPELINE_STARTING, PIPELINE_RUNNING, PIPELINE_RESTARTING, PIPELINE_FAILURE, PIPELINE_PAUSED, PIPELINE_STANDBY,
@@ -204,18 +204,7 @@ class PachydermAdapter:
             PIPELINE_STANDBY: 'standby',
         }
 
-        def cron_spec(i) -> str:
-            if i.cron.spec != '':
-                return str(i.cron.spec)
-            cross_or_union = i.cross or i.union
-            if cross_or_union:
-                for j in cross_or_union:
-                    spec = cron_spec(j)
-                    if spec:
-                        return spec
-            return ''
-
-        def input_string(i) -> str:
+        def input_string(i: Input) -> str:
             if i.cross:
                 return '(' + ' ⨯ '.join([input_string(j) for j in i.cross]) + ')'
             elif i.union:
@@ -233,7 +222,7 @@ class PachydermAdapter:
             else:
                 return '?'
 
-        def input_repos(i) -> Generator[str, None, None]:
+        def input_repos(i: Input) -> Generator[str, None, None]:
             cross_or_union = i.cross or i.union
             if cross_or_union:
                 for j in cross_or_union:
@@ -249,7 +238,7 @@ class PachydermAdapter:
             res.append({
                 'pipeline': pipeline.pipeline.name,
                 'image': pipeline.transform.image,
-                'cron_spec': cron_spec(pipeline.input),
+                'cron_spec': ', '.join([cron['spec'] for cron in _pipeline_input_cron_specs(pipeline.input)]),
                 'input': input_string(pipeline.input),
                 'input_repos': list(input_repos(pipeline.input)),
                 'output_branch': pipeline.output_branch,
@@ -413,6 +402,11 @@ class PachydermAdapter:
     @retry
     def stop_pipeline(self, pipeline: str) -> None:
         self.pps_stub.StopPipeline(StopPipelineRequest(pipeline=Pipeline(name=pipeline)))
+
+    @retry
+    def get_pipeline_cron_specs(self, pipeline: str) -> List[Dict[str, Any]]:
+        res = self.pps_stub.InspectPipeline(InspectPipelineRequest(pipeline=Pipeline(name=pipeline)))
+        return list(_pipeline_input_cron_specs(res.input))
 
     @retry
     def create_repo(self, repo: str, description: Optional[str] = None) -> None:
@@ -603,6 +597,22 @@ class PachydermCommitAdapter:
     def _raise_if_finished(self):
         if self.finished:
             raise PachydermException(f'Commit {self.commit} is already finished')
+
+
+def _pipeline_input_cron_specs(i: Input) -> Generator[Dict[str, Any], None, None]:
+    if i.cron.spec != '':
+        yield {
+            'name': str(i.cron.name),
+            'spec': str(i.cron.spec),
+            'repo': str(i.cron.repo),
+            # 'overwrite': bool(i.cron.overwrite),
+        }
+    cross_or_union = i.cross or i.union
+    if cross_or_union:
+        for j in cross_or_union:
+            spec = _pipeline_input_cron_specs(j)
+            if spec:
+                yield from spec
 
 
 def _invert_dict(d: Dict[str, str]) -> Dict[str, List[str]]:
