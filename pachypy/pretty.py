@@ -253,7 +253,8 @@ class PrettyPachydermClient(PachydermClient):
             job = row.job
             worker = row.worker
 
-    def _progress(self, x, **kwargs):
+    @staticmethod
+    def _progress(x, **kwargs):
         if 'leave' not in kwargs:
             kwargs['leave'] = False
         return tqdm_notebook(x, **kwargs) if len(x) > 2 else x

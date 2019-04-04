@@ -515,7 +515,7 @@ class PachydermCommitAdapter:
             to_repos = [to_repos] if isinstance(to_repos, str) else to_repos
             to_repos = [Repo(name=repo) for repo in to_repos]
         res = self.adapter.pfs_stub.FlushCommit(FlushCommitRequest(commits=[self._commit], to_repos=to_repos or []))
-        for r in res:
+        for _ in res:
             if res.done():
                 return
             time.sleep(0.25)
