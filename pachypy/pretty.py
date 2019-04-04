@@ -12,6 +12,7 @@ import pandas as pd
 import numpy as np
 from IPython.core.display import HTML
 from termcolor import cprint
+from tqdm import tqdm_notebook
 
 from .client import PachydermClient, WildcardFilter
 
@@ -251,6 +252,11 @@ class PrettyPachydermClient(PachydermClient):
             cprint(f'[{row.ts}] {message}', color)
             job = row.job
             worker = row.worker
+
+    def _progress(self, x, **kwargs):
+        if 'leave' not in kwargs:
+            kwargs['leave'] = False
+        return tqdm_notebook(x, **kwargs) if len(x) > 2 else x
 
 
 def _pipeline_sort_key(input_repos: Dict[str, List[str]]):

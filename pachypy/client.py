@@ -139,7 +139,7 @@ class PachydermClient:
         repo_names = self._list_repo_names(repos)
         if len(repo_names) == 0:
             raise PachydermClientException(f'No repos matching "{repos}" were found.')
-        df = pd.concat([self.adapter.list_commits(repo=repo, n=n) for repo in repo_names])
+        df = pd.concat([self.adapter.list_commits(repo=repo, n=n) for repo in self._progress(repo_names, unit='repo')])
         return df.set_index(['repo', 'commit'])[['branches', 'size_bytes', 'started', 'finished', 'parent_commit']]
 
     def list_files(self, repos: WildcardFilter, branch: Optional[str] = 'master', commit: Optional[str] = None,
@@ -162,12 +162,12 @@ class PachydermClient:
         if branch is None and commit is None:
             df = pd.concat([
                 self.adapter.list_files(repo=repo, branch=None, commit=branch_head, glob=glob)
-                for repo in repo_names for branch_head in self.adapter.list_branch_heads(repo).values()
+                for repo in self._progress(repo_names, unit='repo') for branch_head in self.adapter.list_branch_heads(repo).values()
             ])
         else:
             df = pd.concat([
                 self.adapter.list_files(repo=repo, branch=branch, commit=commit, glob=glob)
-                for repo in repo_names
+                for repo in self._progress(repo_names, unit='repo')
             ])
         if files_only:
             df = df[df['type'] == 'file']
@@ -200,7 +200,7 @@ class PachydermClient:
             pipeline_names = self._list_pipeline_names(pipelines)
             if len(pipeline_names) == 0:
                 raise PachydermClientException(f'No pipelines matching "{pipelines}" were found.')
-            df = pd.concat([self.adapter.list_jobs(pipeline=pipeline, n=n) for pipeline in pipeline_names])
+            df = pd.concat([self.adapter.list_jobs(pipeline=pipeline, n=n) for pipeline in self._progress(pipeline_names, unit='pipeline')])
         else:
             df = self.adapter.list_jobs(n=n)
         for col in ['started', 'finished']:
@@ -239,7 +239,7 @@ class PachydermClient:
         pipeline_names = self._list_pipeline_names(pipelines)
         if len(pipeline_names) == 0:
             raise PachydermClientException(f'No pipelines matching "{pipelines}" were found.')
-        logs = [self.adapter.get_logs(pipeline=pipeline, master=master) for pipeline in pipeline_names]
+        logs = [self.adapter.get_logs(pipeline=pipeline, master=master) for pipeline in self._progress(pipeline_names, unit='pipeline')]
         df = pd.concat(logs, ignore_index=True).reset_index()
         df = df[df['job'].notna()]
         df['user'] = df['user'].fillna(False)
@@ -294,7 +294,7 @@ class PachydermClient:
             self.logger.info(f'Deleted repo {repo}')
         return repos
 
-    def commit(self, repo: str, branch: Optional[str] = 'master', parent_commit: Optional[str] = None) -> 'PachydermCommit':
+    def commit(self, repo: str, branch: Optional[str] = 'master', parent_commit: Optional[str] = None, flush: bool = False) -> 'PachydermCommit':
         """Returns a context manager for a new commit.
 
         The context manager automatically starts and finishes the commit.
@@ -307,11 +307,13 @@ class PachydermClient:
                     no parent (unless `parent_commit` is specified) and will initially appear empty.
             parent_commit: ID of parent commit. Upon creation the new commit will appear identical to the parent commit.
                 Data can safely be added to the new commit without affecting the contents of the parent commit.
+            flush: If true, blocks until all jobs triggered by this commit have finished
+                when the context is exited (only when leaving the `with` statement).
 
         Returns:
             Commit object allowing operations inside the commit.
         """
-        return PachydermCommit(self.adapter, repo, branch=branch, parent_commit=parent_commit)
+        return PachydermCommit(self.adapter, repo, branch=branch, parent_commit=parent_commit, flush=flush)
 
     def put_timestamp_file(self, repo: str, branch: str = 'master', overwrite: bool = True) -> None:
         """Put a timestamp file in a repository to simulate a cron tick.
@@ -429,7 +431,7 @@ class PachydermClient:
         destination = Path(destination).expanduser().resolve()
         files = self.adapter.list_files(repo, branch=branch, commit=commit, glob=glob)
         files = files[files['type'] == 'file']
-        for _, row in files.iterrows():
+        for _, row in self._progress(files.iterrows(), unit='file'):
             local_path = destination / os.path.relpath(row['path'], path)
             os.makedirs(local_path.parent, exist_ok=True)
             self.get_file(repo, path=row['path'], commit=row['commit'], destination=local_path)
@@ -664,6 +666,10 @@ class PachydermClient:
 
     def _list_repo_names(self, match: WildcardFilter = None) -> List[str]:
         return _wildcard_filter(self.adapter.list_repo_names(), match)
+
+    def _progress(self, x, **kwargs):
+        del kwargs
+        return x
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}('{self.adapter.host}:{self.adapter.port}')"

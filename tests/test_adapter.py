@@ -110,6 +110,23 @@ def pipeline_4(adapter: PachydermAdapter):
     })
 
 
+@pytest.fixture(scope='function')
+def pipeline_5(adapter: PachydermAdapter, repo):
+    yield from pipeline(adapter, {
+        'pipeline': {'name': 'test_pipeline_5'},
+        'transform': {
+            'image': 'alpine:latest',
+            'cmd': ['/bin/sh', '-c', f"sleep 5s && cat /pfs/{repo}/*" + " | wc -w | awk '{$1=$1};1' > /pfs/out/cnt"]
+        },
+        'input': {
+            'pfs': {
+                'repo': repo,
+                'glob': '/'
+            }
+        }
+    })
+
+
 def skip_if_pachyderm_unavailable(adapter: PachydermAdapter):
     if adapter._connectable is None:
         adapter.check_connectivity()
@@ -162,9 +179,6 @@ def await_job_completed_state(adapter: PachydermAdapter, pipeline_name, timeout=
 
 def test_init(monkeypatch):
     monkeypatch.delenv('PACHD_ADDRESS', raising=False)
-    monkeypatch.delenv('PACHD_SERVICE_HOST', raising=False)
-    monkeypatch.delenv('PACHD_SERVICE_PORT', raising=False)
-
     adapter = PachydermAdapter()
     assert adapter.host == 'localhost' and adapter.port == 30650
     adapter = PachydermAdapter(host='test_host')
@@ -172,12 +186,9 @@ def test_init(monkeypatch):
     with mock.patch.dict(os.environ, {'PACHD_ADDRESS': 'test_host:12345'}):
         adapter = PachydermAdapter()
         assert adapter.host == 'test_host' and adapter.port == 12345
-    with mock.patch.dict(os.environ, {'PACHD_SERVICE_HOST': 'another_test_host'}):
+    with mock.patch.dict(os.environ, {'PACHD_ADDRESS': 'another_test_host'}):
         adapter = PachydermAdapter()
         assert adapter.host == 'another_test_host' and adapter.port == 30650
-    with mock.patch.dict(os.environ, {'PACHD_SERVICE_HOST': 'another_test_host', 'PACHD_SERVICE_PORT': '12345'}):
-        adapter = PachydermAdapter()
-        assert adapter.host == 'another_test_host' and adapter.port == 12345
 
 
 def test_check_connectivity():
@@ -345,6 +356,19 @@ def test_commit_put_file_url(adapter: PachydermAdapter, repo):
     assert '/get_logs.csv' in set(files.path)
     assert c.commit in set(commits.commit)
     assert len(adapter.list_branch_heads(repo)) == 0
+
+
+def test_commit_flush(adapter: PachydermAdapter, pipeline_5):
+    skip_if_pachyderm_unavailable(adapter)
+    pipeline = pipeline_5['pipeline']['name']
+    repo = pipeline_5['input']['pfs']['repo']
+    with PachydermCommitAdapter(adapter, repo, flush=True) as c:
+        c.put_file_bytes(b'a b c d e f g h i j\n', 'file1')
+        c.put_file_bytes(b'k l m n o p q r s t\n', 'file2')
+        t = time.time()
+    assert (time.time() - t) > 5
+    res = b''.join([c for c in adapter.get_file(pipeline, 'cnt')]).decode('utf-8')
+    assert int(res) == 20
 
 
 def test_list_commits_files(adapter: PachydermAdapter, repo):

@@ -10,7 +10,7 @@ from python_pachyderm.client.pfs.pfs_pb2 import (
     ListRepoRequest, ListCommitRequest, ListBranchRequest, GlobFileRequest, GetFileRequest,
     CreateRepoRequest, DeleteRepoRequest,
     CreateBranchRequest, DeleteBranchRequest,
-    StartCommitRequest, FinishCommitRequest, DeleteCommitRequest,
+    StartCommitRequest, FinishCommitRequest, DeleteCommitRequest, FlushCommitRequest,
     PutFileRequest, DeleteFileRequest,
     RESERVED as FILETYPE_RESERVED, FILE as FILETYPE_FILE, DIR as FILETYPE_DIR,
     NONE as DELIMITER_NONE, JSON as DELIMITER_JSON, LINE as DELIMITER_LINE, SQL as DELIMITER_SQL, CSV as DELIMITER_CSV
@@ -70,7 +70,7 @@ class PachydermAdapter:
 
     def __init__(self, host: Optional[str] = None, port: Optional[int] = None):
         if host is None:
-            host = os.getenv('PACHD_ADDRESS') or os.getenv('PACHD_SERVICE_HOST')
+            host = os.getenv('PACHD_ADDRESS')
         if host is None:
             try:
                 with open(os.path.expanduser('~/.pachyderm/config.json'), 'r') as f:
@@ -78,18 +78,14 @@ class PachydermAdapter:
                     host = config['v1']['pachd_address']
             except (json.JSONDecodeError, KeyError):
                 pass
-        if host is not None and port is None and ':' in host:
+        if host is not None and ':' in host:
             host_split = host.split(':')
             host = host_split[0]
             port = int(host_split[1])
-        if host is None:
-            host = 'localhost'
-        if port is None:
-            port = int(os.getenv('PACHD_SERVICE_PORT', 30650))
 
-        self.host = host
-        self.port = port
-        self.channel = grpc.insecure_channel(f'{host}:{port}')
+        self.host = host or 'localhost'
+        self.port = port or 30650
+        self.channel = grpc.insecure_channel(f'{self.host}:{self.port}')
         self.pfs_stub = PfsAPIStub(self.channel)
         self.pps_stub = PpsAPIStub(self.channel)
         self.version_stub = VersionAPIStub(self.channel)
@@ -458,11 +454,12 @@ class PachydermAdapter:
 
 class PachydermCommitAdapter:
 
-    def __init__(self, adapter: PachydermAdapter, repo: str, branch: Optional[str] = 'master', parent_commit: Optional[str] = None):
+    def __init__(self, adapter: PachydermAdapter, repo: str, branch: Optional[str] = 'master', parent_commit: Optional[str] = None, flush: bool = False):
         self.adapter = adapter
         self.repo = repo
         self.branch = branch
         self.parent_commit = parent_commit
+        self.flush_ = flush
         self._commit = None
         self._finished = False
         self._buffer_size = 3 * 1024 * 1024  # 3 MB
@@ -476,6 +473,8 @@ class PachydermCommitAdapter:
             self.delete()
         else:
             self.finish()
+            if self.flush_:
+                self.flush()
 
     @property
     def commit(self) -> Optional[str]:
@@ -503,6 +502,23 @@ class PachydermCommitAdapter:
         self._raise_if_finished()
         self.adapter.pfs_stub.FinishCommit(FinishCommitRequest(commit=self._commit))
         self._finished = True
+
+    @retry
+    def flush(self, to_repos=None):
+        """Blocks until all jobs triggered by this commit have finished.
+
+        Args:
+            to_repos: If specified, only the commits up to and including those repos
+                will be considered, otherwise all repos are considered.
+        """
+        if to_repos:
+            to_repos = [to_repos] if isinstance(to_repos, str) else to_repos
+            to_repos = [Repo(name=repo) for repo in to_repos]
+        res = self.adapter.pfs_stub.FlushCommit(FlushCommitRequest(commits=[self._commit], to_repos=to_repos or []))
+        for r in res:
+            if res.done():
+                return
+            time.sleep(0.25)
 
     @retry
     def delete(self):
