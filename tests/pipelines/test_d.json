@@ -1,0 +1,7 @@
+{
+    "pipeline": "test_d_pipeline_1",
+    "transform": {
+        "image": "alpine:latest",
+        "cmd": ["/bin/sh", "-c", "date > /pfs/out/date"]
+    }
+}
