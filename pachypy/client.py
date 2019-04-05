@@ -438,7 +438,7 @@ class PachydermClient:
 
     def create_pipelines(self, pipelines: WildcardFilter = '*', pipeline_specs: Optional[List[dict]] = None,
                          recreate: bool = False) -> PipelineChanges:
-        """Create or recreate pipelines.
+        """Creates or recreates pipelines.
 
         Args:
             pipelines: Pattern to filter pipeline specs by pipeline name. Supports shell-style wildcards.
@@ -453,7 +453,7 @@ class PachydermClient:
 
     def update_pipelines(self, pipelines: WildcardFilter = '*', pipeline_specs: Optional[List[dict]] = None,
                          recreate: bool = False, reprocess: bool = False) -> PipelineChanges:
-        """Update or recreate pipelines.
+        """Updates or recreates pipelines.
 
         Non-existing pipelines will be created.
 
@@ -470,7 +470,7 @@ class PachydermClient:
                                                 update=True, recreate=recreate, reprocess=reprocess)
 
     def delete_pipelines(self, pipelines: WildcardFilter) -> List[str]:
-        """Delete existing pipelines.
+        """Deletes existing pipelines.
 
         Args:
             pipelines: Pattern to filter pipelines by name. Supports shell-style wildcards.
@@ -485,7 +485,7 @@ class PachydermClient:
         return pipelines[::-1]
 
     def start_pipelines(self, pipelines: WildcardFilter) -> List[str]:
-        """Restart stopped pipelines.
+        """Restarts stopped pipelines.
 
         Args:
             pipelines: Pattern to filter pipelines by name. Supports shell-style wildcards.
@@ -500,7 +500,7 @@ class PachydermClient:
         return pipelines
 
     def stop_pipelines(self, pipelines: WildcardFilter) -> List[str]:
-        """Stop running pipelines.
+        """Stops running pipelines.
 
         Args:
             pipelines: Pattern to filter pipelines by name. Supports shell-style wildcards.
@@ -515,7 +515,7 @@ class PachydermClient:
         return pipelines
 
     def trigger_pipeline(self, pipeline: str) -> None:
-        """Trigger a pipeline with a cron input by committing a timestamp file into its cron input repository.
+        """Triggers a pipeline with a cron input by committing a timestamp file into its cron input repository.
 
         This simply calls :meth:`~pachypy.client.PachydermClient.put_timestamp_file`.
 
@@ -527,7 +527,15 @@ class PachydermClient:
             raise PachydermClientException(f'Cannot trigger pipeline {pipeline} without cron input')
         self.put_timestamp_file(cron_specs[0]['repo'])
 
-    def read_pipeline_specs(self, pipelines: WildcardFilter = '*') -> List[dict]:
+    def delete_job(self, job: str) -> None:
+        """Deletes a job.
+
+        Args:
+            job: ID of job to delete.
+        """
+        self.adapter.delete_job(job)
+
+    def _read_pipeline_specs(self, pipelines: WildcardFilter = '*') -> List[dict]:
         """Read pipelines specs from files.
 
         The spec files are defined through the `pipeline_spec_files` property,
@@ -549,13 +557,25 @@ class PachydermClient:
 
         # Read pipeline specs from files
         pipeline_specs = []
+        n = len(files)
         for file in files:
             with open(file, 'r') as f:
-                file_content = yaml.safe_load(f)
-                if not isinstance(file_content, list):
-                    raise TypeError(f'File {os.path.basename(file)} does not contain a list')
-                pipeline_specs.extend(file_content)
-        self.logger.debug(f'Read pipeline specifications from {len(files)} files')
+                if file.endswith('yaml') or file.endswith('yml'):
+                    file_content = yaml.safe_load(f)
+                elif file.endswith('json'):
+                    file_content = json.load(f)
+                else:
+                    n -= 1
+                    continue
+            if isinstance(file_content, dict):
+                file_content = [file_content]
+            if isinstance(file_content, list) and len(file_content) > 0:
+                for i, pipeline_spec in enumerate(file_content):
+                    if isinstance(pipeline_spec, dict) and all(k in pipeline_spec for k in ('pipeline', 'transform', 'input')):
+                        pipeline_specs.append(pipeline_spec)
+                    else:
+                        raise ValueError(f"Item {i+1} in file '{file}' does not look like a pipeline specification")
+        self.logger.debug(f'Read pipeline specifications from {n} files')
 
         # Filter pipelines
         if pipelines != '*':
@@ -567,7 +587,7 @@ class PachydermClient:
             pipeline_specs = [p for p in pipeline_specs if wildcard_match_pipeline_spec(p)]
 
         # Transform pipeline specs to meet the Pachyderm specification format
-        pipeline_specs = self.transform_pipeline_specs(pipeline_specs)
+        pipeline_specs = self._transform_pipeline_specs(pipeline_specs)
 
         if len(pipeline_specs) > 0:
             self.logger.debug(f'Pattern "{pipelines}" matched specification for {len(pipeline_specs)} pipelines')
@@ -576,7 +596,7 @@ class PachydermClient:
 
         return pipeline_specs
 
-    def transform_pipeline_specs(self, pipeline_specs: List[dict]) -> List[dict]:
+    def _transform_pipeline_specs(self, pipeline_specs: List[dict]) -> List[dict]:
         """Applies default transformations on pipeline specs.
 
         This includes inheritance of the `image` from previous pipelines if not specified.
@@ -592,13 +612,13 @@ class PachydermClient:
             if 'image' not in pipeline['transform'] and previous_image is not None:
                 pipeline['transform']['image'] = previous_image
             if self.update_image_digests:
-                pipeline['transform']['image'] = self.update_image_digest(pipeline['transform']['image'])
+                pipeline['transform']['image'] = self._update_image_digest(pipeline['transform']['image'])
             if callable(self.pipeline_spec_transformer):
                 pipeline = self.pipeline_spec_transformer(pipeline)
             previous_image = pipeline['transform']['image']
         return pipeline_specs
 
-    def update_image_digest(self, image: str) -> str:
+    def _update_image_digest(self, image: str) -> str:
         """Add or update the latest image digest to/in an image string of format repository:tag@digest.
 
         Chooses a container registry adapter to retrieve the latest image digest from
@@ -633,7 +653,7 @@ class PachydermClient:
     def _create_or_update_pipelines(self, pipelines: WildcardFilter = '*', pipeline_specs: List[dict] = None,
                                     update: bool = True, recreate: bool = False, reprocess: bool = False) -> PipelineChanges:
         if pipeline_specs is None:
-            pipeline_specs = self.read_pipeline_specs(pipelines)
+            pipeline_specs = self._read_pipeline_specs(pipelines)
         elif pipelines != '*':
             pipeline_specs = [p for p in pipeline_specs if _wildcard_match(p['pipeline']['name'], pipelines)]
 
@@ -668,8 +688,8 @@ class PachydermClient:
     def _list_repo_names(self, match: WildcardFilter = None) -> List[str]:
         return _wildcard_filter(self.adapter.list_repo_names(), match)
 
-    @staticmethod
-    def _progress(x, **kwargs):
+    @classmethod
+    def _progress(cls, x, **kwargs):
         del kwargs
         return x
 

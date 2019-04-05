@@ -81,6 +81,7 @@ def patch_adapter():
         delete_pipeline=DEFAULT,
         start_pipeline=DEFAULT,
         stop_pipeline=DEFAULT,
+        delete_job=DEFAULT,
         get_pipeline_cron_specs=DEFAULT
     )
 
@@ -220,6 +221,13 @@ def test_create_delete_repos(client: PachydermClient, **mocks):
         assert client.delete_repos(repos) == repos
 
 
+@patch_adapter()
+def test_delete_job(client: PachydermClient, **mocks):
+    job = 'a1b2c3d4'
+    client.delete_job(job)
+    mocks['delete_job'].assert_called_once_with(job)
+
+
 @patch_commit_adapter()
 def test_commit_put_files(client: PachydermClient, **mocks):
     mock_file = lambda f: os.path.join(os.path.dirname(__file__), 'mock', f)
@@ -306,17 +314,24 @@ def test_get_file(client: PachydermClient, tmp_path, **mocks):
     assert tmp_path / '1/2019-03-31/1554087629/1554056117887.avro' in files
 
 
-def test_read_pipeline_specs(client: PachydermClient):
+def test_read_pipeline_specs(client: PachydermClient, pipeline_spec_files_path):
     def custom_transform_pipeline_spec(pipeline_spec):
         pipeline_spec['test'] = True
         return pipeline_spec
     client.pipeline_spec_transformer = custom_transform_pipeline_spec
-    assert len(client.read_pipeline_specs('test*')) == 4
-    pipeline_specs = client.read_pipeline_specs('test_a*')
+    assert len(client._read_pipeline_specs('test*')) == 4
+    pipeline_specs = client._read_pipeline_specs('test_a*')
     assert isinstance(pipeline_specs, list) and len(pipeline_specs) == 2
     assert pipeline_specs[0]['pipeline']['name'] == 'test_a_pipeline_1'
     assert pipeline_specs[0]['transform']['image'] == pipeline_specs[1]['transform']['image']
     assert pipeline_specs[0]['test'] is True
+
+    client.pipeline_spec_files = os.path.join(pipeline_spec_files_path, 'test_c.json')  # type: ignore
+    assert len(client._read_pipeline_specs('*')) == 1
+
+    with pytest.raises(ValueError):
+        client.pipeline_spec_files = os.path.join(pipeline_spec_files_path, 'test_d.json')  # type: ignore
+        client._read_pipeline_specs('*')
 
 
 @patch_adapter()
@@ -348,22 +363,22 @@ def test_update_image_digest(client: PachydermClient):
     tag = 'tag'
     with patch('pachypy.registry.DockerRegistryAdapter.get_image_digest', MagicMock(return_value=digest)) as mock:
         repo = 'user/repo'
-        assert client.update_image_digest(f'{repo}:{tag}') == f'{repo}:{tag}@{digest}'
-        assert client.update_image_digest(f'{repo}:{tag}@sha1:000') == f'{repo}:{tag}@{digest}'
+        assert client._update_image_digest(f'{repo}:{tag}') == f'{repo}:{tag}@{digest}'
+        assert client._update_image_digest(f'{repo}:{tag}@sha1:000') == f'{repo}:{tag}@{digest}'
         mock.assert_called_with(repo, tag)
     with patch('pachypy.registry.AmazonECRAdapter.get_image_digest', MagicMock(return_value=digest)) as mock:
         repo = 'xxx.dkr.ecr.xxx.amazonaws.com/repo'
-        assert client.update_image_digest(f'{repo}:{tag}') == f'{repo}:{tag}@{digest}'
-        assert client.update_image_digest(f'{repo}:{tag}@sha1:000') == f'{repo}:{tag}@{digest}'
+        assert client._update_image_digest(f'{repo}:{tag}') == f'{repo}:{tag}@{digest}'
+        assert client._update_image_digest(f'{repo}:{tag}@sha1:000') == f'{repo}:{tag}@{digest}'
         mock.assert_called_with(repo, tag)
     with patch('pachypy.registry.GCRAdapter.get_image_digest', MagicMock(return_value=digest)) as mock:
         repo = 'gcr.io/repo'
-        assert client.update_image_digest(f'{repo}:{tag}') == f'{repo}:{tag}@{digest}'
-        assert client.update_image_digest(f'{repo}:{tag}@sha1:000') == f'{repo}:{tag}@{digest}'
+        assert client._update_image_digest(f'{repo}:{tag}') == f'{repo}:{tag}@{digest}'
+        assert client._update_image_digest(f'{repo}:{tag}@sha1:000') == f'{repo}:{tag}@{digest}'
         mock.assert_called_with(repo, tag)
     with patch('pachypy.registry.DockerRegistryAdapter.get_image_digest', MagicMock(return_value=None)) as mock:
         for image in ['user/repo:tag', 'user/repo:tag@sha1:000']:
-            assert client.update_image_digest(image) == image
+            assert client._update_image_digest(image) == image
 
 
 def test_wildcard_filter():
