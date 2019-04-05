@@ -181,7 +181,7 @@ class PrettyPachydermClient(PachydermClient):
         }, axis=1, inplace=True)
         df['Duration'] = df['Duration'].dt.total_seconds()
         df['Progress'] = \
-            df['progress'].apply(lambda x: f'{x:.0%}') + ' | ' + \
+            df['progress'].fillna(0).apply(lambda x: f'{x:.0%}') + ' | ' + \
             '<span style="color: green">' + df['data_processed'].astype(str) + '</span>' + \
             np.where(df['data_skipped'] > 0, ' + <span style="color: purple">' + df['data_skipped'].astype(str) + '</span>', '') + \
             ' / <span>' + df['data_total'].astype(str) + '</span>'
@@ -253,8 +253,8 @@ class PrettyPachydermClient(PachydermClient):
             job = row.job
             worker = row.worker
 
-    @staticmethod
-    def _progress(x, **kwargs):
+    @classmethod
+    def _progress(cls, x, **kwargs):
         if 'leave' not in kwargs:
             kwargs['leave'] = False
         return tqdm_notebook(x, **kwargs) if len(x) > 2 else x
