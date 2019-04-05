@@ -444,13 +444,14 @@ def test_list_jobs_get_logs(adapter: PachydermAdapter, pipeline_2):
 
     jobs = adapter.list_jobs(pipeline=pipeline_name)
     assert len(jobs) == 1
+    job = jobs['job'].iloc[0]
     assert (jobs['finished'] - jobs['started']).dt.total_seconds().round().iloc[0] > -10
     assert jobs['data_processed'].iloc[0] == jobs['data_total'].iloc[0] == 1
     assert jobs['data_skipped'].iloc[0] == 0
 
-    datums = adapter.list_datums(job=jobs['job'].iloc[0])
+    datums = adapter.list_datums(job=job)
     assert len(datums) == 1
-    assert datums['job'].iloc[0] == jobs['job'].iloc[0]
+    assert datums['job'].iloc[0] == job
     assert datums['repo'].iloc[0] == tick_repo_name
     assert datums['size_bytes'].iloc[0] > 0
 
@@ -458,6 +459,9 @@ def test_list_jobs_get_logs(adapter: PachydermAdapter, pipeline_2):
     logs = logs[logs['user']]
     assert logs.shape == (1, 7)
     assert logs['message'].iloc[0] == 'test'
+
+    adapter.delete_job(job)
+    assert len(adapter.list_jobs(pipeline=pipeline_name)) == 0
 
 
 def test_get_file(adapter: PachydermAdapter, repo):

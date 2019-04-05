@@ -18,7 +18,7 @@ from python_pachyderm.client.pfs.pfs_pb2 import (
 from python_pachyderm.client.pfs.pfs_pb2_grpc import APIStub as PfsAPIStub
 from python_pachyderm.client.pps.pps_pb2 import (
     Pipeline, Job, Input,
-    ListPipelineRequest, ListJobRequest, ListDatumRequest, GetLogsRequest,
+    ListPipelineRequest, ListJobRequest, ListDatumRequest, GetLogsRequest, DeleteJobRequest,
     CreatePipelineRequest, DeletePipelineRequest, StartPipelineRequest, StopPipelineRequest, InspectPipelineRequest,
     FAILED as DATUM_FAILED, SUCCESS as DATUM_SUCCESS, SKIPPED as DATUM_SKIPPED, STARTING as DATUM_STARTING,
     JOB_STARTING, JOB_RUNNING, JOB_FAILURE, JOB_SUCCESS, JOB_KILLED,
@@ -430,6 +430,10 @@ class PachydermAdapter:
     @retry
     def delete_branch(self, repo: str, branch: str) -> None:
         self.pfs_stub.DeleteBranch(DeleteBranchRequest(branch=Branch(repo=Repo(name=repo), name=branch)))
+
+    @retry
+    def delete_job(self, job: str) -> None:
+        self.pps_stub.DeleteJob(DeleteJobRequest(job=Job(id=job)))
 
     @retry
     def get_file(self, repo: str, path: str, branch: Optional[str] = 'master', commit: Optional[str] = None) -> Generator[bytes, None, None]:
