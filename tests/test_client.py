@@ -303,6 +303,7 @@ def test_commit_delete_files(client: PachydermClient, **mocks):
 
 @patch_adapter()
 def test_get_file(client: PachydermClient, tmp_path, **mocks):
+    del mocks
     repo = 'test_repo'
     file = 'test_file'
 
