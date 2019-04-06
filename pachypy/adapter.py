@@ -609,7 +609,7 @@ def _pipeline_input_cron_specs(i: Input) -> Generator[Dict[str, Any], None, None
             'name': str(i.cron.name),
             'spec': str(i.cron.spec),
             'repo': str(i.cron.repo),
-            # 'overwrite': bool(i.cron.overwrite),
+            'overwrite': bool(i.cron.overwrite),
         }
     cross_or_union = i.cross or i.union
     if cross_or_union:

@@ -315,7 +315,7 @@ class PachydermClient:
         """
         return PachydermCommit(self, repo, branch=branch, parent_commit=parent_commit, flush=flush)
 
-    def put_timestamp_file(self, repo: str, branch: str = 'master', overwrite: bool = True) -> None:
+    def put_timestamp_file(self, repo: str, branch: str = 'master', overwrite: bool = True, flush: bool = False) -> None:
         """Put a timestamp file in a repository to simulate a cron tick.
 
         This can be used to trigger pipelines with a cron input.
@@ -325,14 +325,16 @@ class PachydermClient:
             branch: Branch in repository.
             overwrite: Whether to overwrite an existing 'time' file (True),
                 or to add a new timestamp file (False).
+            flush: If true, blocks until all jobs triggered by this commit have finished.
         """
-        if overwrite:
-            timestamp = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
-            with self.commit(repo, branch=branch) as c:
+        with self.commit(repo, branch=branch, flush=flush) as c:
+            if overwrite:
                 c.delete_file('time')
+                timestamp = datetime.utcnow().isoformat()[:-3] + 'Z'
                 c.put_file_bytes(json.dumps(timestamp).encode('utf-8'), 'time')
-        else:
-            raise NotImplementedError
+            else:
+                timestamp = datetime.utcnow().replace(microsecond=0).isoformat() + 'Z'
+                c.put_file_bytes(b'', timestamp)
 
     def delete_commit(self, repo: str, commit: str) -> None:
         """Deletes a commit.
@@ -514,18 +516,19 @@ class PachydermClient:
             self.logger.info(f'Stopped pipeline {pipeline}')
         return pipelines
 
-    def trigger_pipeline(self, pipeline: str) -> None:
+    def trigger_pipeline(self, pipeline: str, flush: bool = False) -> None:
         """Triggers a pipeline with a cron input by committing a timestamp file into its cron input repository.
 
         This simply calls :meth:`~pachypy.client.PachydermClient.put_timestamp_file`.
 
         Args:
             pipeline: Name of pipeline to trigger.
+            flush: If true, blocks until all triggered jobs have finished.
         """
         cron_specs = self.adapter.get_pipeline_cron_specs(pipeline)
         if len(cron_specs) == 0:
             raise PachydermClientException(f'Cannot trigger pipeline {pipeline} without cron input')
-        self.put_timestamp_file(cron_specs[0]['repo'])
+        self.put_timestamp_file(cron_specs[0]['repo'], overwrite=cron_specs[0]['overwrite'], flush=flush)
 
     def delete_job(self, job: str) -> None:
         """Deletes a job.

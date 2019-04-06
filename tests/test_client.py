@@ -269,8 +269,19 @@ def test_trigger_pipeline(client: PachydermClient, **mocks):
     mocks['get_pipeline_cron_specs'].return_value = []
     with pytest.raises(PachydermClientException):
         client.trigger_pipeline('pipeline_without_cron_input')
-    mocks['get_pipeline_cron_specs'].return_value = [{'repo': 'pipeline_tick'}]
+
+    mocks['get_pipeline_cron_specs'].return_value = [{'repo': 'pipeline_tick', 'overwrite': True}]
     client.trigger_pipeline('pipeline')
+    mocks['delete_file'].assert_called_once()
+    mocks['delete_file'].reset_mock()
+    mocks['put_file_bytes'].assert_called_once()
+
+    mocks['delete_file'].reset_mock()
+    mocks['put_file_bytes'].reset_mock()
+
+    mocks['get_pipeline_cron_specs'].return_value = [{'repo': 'pipeline_tick', 'overwrite': False}]
+    client.trigger_pipeline('pipeline')
+    assert not mocks['delete_file'].called
     mocks['put_file_bytes'].assert_called_once()
 
 
