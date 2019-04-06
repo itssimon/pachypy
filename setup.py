@@ -6,7 +6,7 @@ setup(
     author='Simon Gurcke',
     packages=find_packages(),
     install_requires=[
-        'python_pachyderm>=1.8.5',
+        'python_pachyderm>=1.8.6',
         'python-dxf>=7.5.0',
         'boto3>=1.9.119',
         'pandas>=0.24.2',
