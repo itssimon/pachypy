@@ -80,7 +80,6 @@ class DockerRegistryAdapter(ContainerRegistryAdapter):
         try:
             with open(os.path.expanduser(file)) as f:
                 data = json.load(f)
-                print(data)
         except (FileNotFoundError, json.JSONDecodeError):
             return None
         auth = data.get('auths', {}).get(self.registry_url, {}).get('auth', '')
