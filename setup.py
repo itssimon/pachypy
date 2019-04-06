@@ -16,6 +16,9 @@ setup(
         'ipython>=7.4.0',
     ],
     extras_require={
+        'ecr': [
+            'boto3>=1.9.120'
+        ],
         'docs':  [
             'sphinx>=2.0.0',
             'sphinx_rtd_theme>=0.4.3',
