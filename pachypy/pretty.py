@@ -3,7 +3,7 @@ __all__ = [
 ]
 
 import logging
-from typing import Dict, List, Iterable, Union, Callable, Optional
+from typing import Dict, List, Iterable, Union, Optional
 from datetime import datetime, date
 from dateutil.relativedelta import relativedelta
 
@@ -23,18 +23,6 @@ BAR_COLOR = '#105ecd33'
 PROGRESS_BAR_COLOR = '#03820333'
 
 
-def inject_dependencies(f: Callable):
-    def inject_dependencies_wrapper(self, *args, **kwargs):
-        ret = f(self, *args, **kwargs)
-        fa_css = f'<link rel="stylesheet" href="{FONT_AWESOME_CSS_URL}" crossorigin="anonymous">'
-        cb_js = f'''
-            <script src="{CLIPBOARD_JS_URL}" crossorigin="anonymous"></script>
-            <script>var clipboard = new ClipboardJS('.copyable');</script>
-        '''
-        return HTML(fa_css + cb_js + ret.render())
-    return inject_dependencies_wrapper
-
-
 class CPrintHandler(logging.StreamHandler):
 
     def emit(self, record: logging.LogRecord):
@@ -45,6 +33,22 @@ class CPrintHandler(logging.StreamHandler):
             logging.CRITICAL: 'red',
         }.get(record.levelno, 'grey')
         cprint(self.format(record), color=color)
+
+
+class PrettyOutput(HTML):
+
+    def __init__(self, styler: style.Styler, df: pd.DataFrame):
+        super().__init__(data=styler.render())
+        self.df = df
+        self.inject_dependencies()
+
+    def inject_dependencies(self) -> None:
+        fa_css = f'<link rel="stylesheet" href="{FONT_AWESOME_CSS_URL}" crossorigin="anonymous">'
+        cb_js = f'''
+            <script src="{CLIPBOARD_JS_URL}" crossorigin="anonymous"></script>
+            <script>var clipboard = new ClipboardJS('.copyable');</script>
+        '''
+        self.data = fa_css + cb_js + self.data  # type: ignore
 
 
 class PrettyPachydermClient(PachydermClient):
@@ -63,8 +67,7 @@ class PrettyPachydermClient(PachydermClient):
             self._logger.propagate = False
         return self._logger
 
-    @inject_dependencies
-    def list_repos(self, repos: WildcardFilter = '*') -> style.Styler:
+    def list_repos(self, repos: WildcardFilter = '*') -> PrettyOutput:
         df = super().list_repos(repos=repos).reset_index()
         df.rename({
             'repo': 'Repo',
@@ -75,15 +78,15 @@ class PrettyPachydermClient(PachydermClient):
         }, axis=1, inplace=True)
         df['Tick'] = df['Tick'].map({True: _fa('stopwatch'), False: ''})
         df['Branches'] = df['Branches'].apply(', '.join)
-        return df[['Repo', 'Tick', 'Branches', 'Size', 'Created']].style \
+        styler = df[['Repo', 'Tick', 'Branches', 'Size', 'Created']].style \
             .bar(subset=['Size'], color=BAR_COLOR, vmin=0) \
             .format({'Created': _format_datetime, 'Size': _format_size}) \
             .set_properties(subset=['Branches'], **{'white-space': 'wrap'}) \
             .set_table_styles(self.table_styles) \
             .hide_index()
+        return PrettyOutput(styler, df)
 
-    @inject_dependencies
-    def list_commits(self, repos: WildcardFilter, n: int = 10) -> style.Styler:
+    def list_commits(self, repos: WildcardFilter, n: int = 10) -> PrettyOutput:
         df = super().list_commits(repos=repos, n=n).reset_index()
         df.rename({
             'repo': 'Repo',
@@ -94,7 +97,7 @@ class PrettyPachydermClient(PachydermClient):
             'finished': 'Finished',
             'parent_commit': 'Parent Commit',
         }, axis=1, inplace=True)
-        return df[['Repo', 'Commit', 'Branch', 'Size', 'Started', 'Finished', 'Parent Commit']].style \
+        styler = df[['Repo', 'Commit', 'Branch', 'Size', 'Started', 'Finished', 'Parent Commit']].style \
             .bar(subset=['Size'], color=BAR_COLOR, vmin=0) \
             .format({
                 'Commit': _hash,
@@ -106,10 +109,10 @@ class PrettyPachydermClient(PachydermClient):
             }) \
             .set_table_styles(self.table_styles) \
             .hide_index()
+        return PrettyOutput(styler, df)
 
-    @inject_dependencies
     def list_files(self, repos: WildcardFilter, branch: Optional[str] = 'master', commit: Optional[str] = None,
-                   glob: str = '**', files_only: bool = True) -> style.Styler:
+                   glob: str = '**', files_only: bool = True) -> PrettyOutput:
         df = super().list_files(repos=repos, branch=branch, commit=commit, glob=glob, files_only=files_only).reset_index()
         df.rename({
             'repo': 'Repo',
@@ -120,7 +123,7 @@ class PrettyPachydermClient(PachydermClient):
             'branches': 'Branch',
             'committed': 'Committed',
         }, axis=1, inplace=True)
-        return df[['Repo', 'Commit', 'Branch', 'Type', 'Path', 'Size', 'Committed']].style \
+        styler = df[['Repo', 'Commit', 'Branch', 'Type', 'Path', 'Size', 'Committed']].style \
             .bar(subset=['Size'], color=BAR_COLOR, vmin=0) \
             .format({
                 'Type': _format_file_type,
@@ -132,9 +135,9 @@ class PrettyPachydermClient(PachydermClient):
             .set_properties(subset=['Path'], **{'white-space': 'wrap'}) \
             .set_table_styles(self.table_styles) \
             .hide_index()
+        return PrettyOutput(styler, df)
 
-    @inject_dependencies
-    def list_pipelines(self, pipelines: WildcardFilter = '*') -> style.Styler:
+    def list_pipelines(self, pipelines: WildcardFilter = '*') -> PrettyOutput:
         df = super().list_pipelines(pipelines=pipelines)
         df['sort_key'] = df.index.map(_pipeline_sort_key(df['input_repos'].to_dict()))
         df.reset_index(inplace=True)
@@ -158,15 +161,15 @@ class PrettyPachydermClient(PachydermClient):
         df['Jobs'] = \
             '<span style="color: green">' + df['jobs_success'].astype(str) + '</span>' + \
             np.where(df['jobs_failure'] > 0, ' + <span style="color: red">' + df['jobs_failure'].astype(str) + '</span>', '')
-        return df[['Pipeline', 'State', 'Cron', 'Input', 'Output', 'Tries', 'Parallelism', 'Jobs', 'Created']].style \
+        styler = df[['Pipeline', 'State', 'Cron', 'Input', 'Output', 'Tries', 'Parallelism', 'Jobs', 'Created']].style \
             .apply(_style_pipeline_state, subset=['State']) \
             .format({'State': _format_pipeline_state, 'Created': _format_datetime}) \
             .set_properties(subset=['Input'], **{'white-space': 'wrap'}) \
             .set_table_styles(self.table_styles) \
             .hide_index()
+        return PrettyOutput(styler, df)
 
-    @inject_dependencies
-    def list_jobs(self, pipelines: WildcardFilter = '*', n: int = 20) -> style.Styler:
+    def list_jobs(self, pipelines: WildcardFilter = '*', n: int = 20) -> PrettyOutput:
         df = super().list_jobs(pipelines=pipelines, n=n).reset_index()
         df.rename({
             'job': 'Job',
@@ -185,7 +188,7 @@ class PrettyPachydermClient(PachydermClient):
             '<span style="color: green">' + df['data_processed'].astype(str) + '</span>' + \
             np.where(df['data_skipped'] > 0, ' + <span style="color: purple">' + df['data_skipped'].astype(str) + '</span>', '') + \
             ' / <span>' + df['data_total'].astype(str) + '</span>'
-        return df[['Job', 'Pipeline', 'State', 'Started', 'Duration', 'Progress', 'Restarts', 'Downloaded', 'Uploaded', 'Output Commit']].style \
+        styler = df[['Job', 'Pipeline', 'State', 'Started', 'Duration', 'Progress', 'Restarts', 'Downloaded', 'Uploaded', 'Output Commit']].style \
             .bar(subset=['Duration'], color=BAR_COLOR, vmin=0) \
             .apply(_style_job_state, subset=['State']) \
             .apply(_style_job_progress, subset=['Progress']) \
@@ -201,9 +204,9 @@ class PrettyPachydermClient(PachydermClient):
             }) \
             .set_table_styles(self.table_styles) \
             .hide_index()
+        return PrettyOutput(styler, df)
 
-    @inject_dependencies
-    def list_datums(self, job: str) -> style.Styler:
+    def list_datums(self, job: str) -> PrettyOutput:
         df = super().list_datums(job=job).reset_index()
         df.rename({
             'job': 'Job',
@@ -216,7 +219,7 @@ class PrettyPachydermClient(PachydermClient):
             'commit': 'Commit',
             'committed': 'Committed',
         }, axis=1, inplace=True)
-        return df[['Job', 'Datum', 'State', 'Repo', 'Type', 'Path', 'Size', 'Commit', 'Committed']].style \
+        styler = df[['Job', 'Datum', 'State', 'Repo', 'Type', 'Path', 'Size', 'Commit', 'Committed']].style \
             .bar(subset=['Size'], color=BAR_COLOR, vmin=0) \
             .apply(_style_datum_state, subset=['State']) \
             .format({
@@ -231,6 +234,7 @@ class PrettyPachydermClient(PachydermClient):
             .set_properties(subset=['Path'], **{'white-space': 'wrap'}) \
             .set_table_styles(self.table_styles) \
             .hide_index()
+        return PrettyOutput(styler, df)
 
     def get_logs(self, pipelines: WildcardFilter = '*', datum: Optional[str] = None,
                  last_job_only: bool = True, user_only: bool = False, master: bool = False) -> None:
