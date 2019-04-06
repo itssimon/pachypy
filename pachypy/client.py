@@ -740,22 +740,30 @@ class PachydermCommit(PachydermCommitAdapter):
                 raise ValueError('path needs to be specified (including filename)')
             self.put_file_bytes(file.read(), path, delimiter=delimiter, target_file_datums=target_file_datums, target_file_bytes=target_file_bytes)  # type: ignore
 
-    def put_files(self, files: FileGlob, path: str = '/') -> List[str]:
+    def put_files(self, files: FileGlob, path: str = '/', keep_structure: bool = False, base_path: Union[str, Path] = '.') -> List[str]:
         """Uploads one or multiple files defined by `files` to the given `path` in PFS.
-
-        Directory structure is not maintained. All files are uploaded into the same directory.
 
         Args:
             files: Glob pattern(s) to files that should be uploaded.
             path: PFS path to upload files to. Must be a directory.
                 Will be created if it doesn't exist. Defaults to the root directory.
+            keep_structure: If true, the local directory structure is recreated in PFS.
+                Use in conjunction with `base_path`.
+            base_path: If `keep_structure` is true, PFS paths will be constructed
+                relative to `path` and using the local file structure relative to `base_path`.
+                This defaults to the current working directory.
 
         Returns:
             Local paths of uploaded files.
         """
         files = _expand_files(files)
         for file in self.client._progress(files, unit='file'):
-            file_path = os.path.join(path, os.path.basename(file))
+            if keep_structure:
+                file_path = os.path.join(path, os.path.relpath(file, base_path))
+            else:
+                file_path = os.path.join(path, os.path.basename(file))
+            if '../' in file_path:
+                raise ValueError(f"'{file_path}' is not a valid path in PFS. You may want to adjust the `base_path` argument.")
             self.put_file(file, file_path)
         return files
 
