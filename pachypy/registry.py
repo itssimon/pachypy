@@ -96,7 +96,7 @@ class AmazonECRAdapter(DockerRegistryAdapter):
 
     @staticmethod
     def _split_image_string(image) -> Tuple[str, Optional[str], Optional[str]]:
-        match = re.match('(^[^:@]+)(?::([^@]+))?(?:@(.+))?$', image)
+        match = re.match('(^[^:@]+)(?::([^:@]+))?(?:@(.+))?$', image)
         if match:
             repository, tag, _ = match.groups()
             registry, repository = docker.auth.resolve_repository_name(repository)
