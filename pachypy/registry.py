@@ -1,136 +1,105 @@
 __all__ = [
-    'DockerRegistryAdapter', 'AmazonECRAdapter', 'GCRAdapter'
+    'DockerRegistryAdapter', 'AmazonECRAdapter'
 ]
 
-import os
 import re
-import json
-import subprocess
-from base64 import b64encode
-from functools import lru_cache
-from typing import Optional
+from base64 import b64decode
+from requests.exceptions import HTTPError
+from typing import Tuple, Optional
+
+import docker
 
 
-class RegistryAuthorizationException(Exception):
+class RegistryException(Exception):
     pass
 
 
-class RegistryImageNotFoundException(Exception):
-    pass
+class DockerRegistryAdapter:
 
+    """Docker registry adapter."""
 
-class ContainerRegistryAdapter:
+    def __init__(self, docker_client: docker.DockerClient):
+        self.docker_client = docker_client
 
-    """Container registry adapter base class."""
+    def get_image_digest(self, image: str) -> str:
+        # TODO: This can be simplified by using docker.api.APIClient.inspect_distribution()
+        # once a fixed version is released.
 
-    @lru_cache()
-    def get_image_digest(self, repository: str, tag: str) -> str:
-        """Retrieve the latest image digest from container registry.
+        api = self.docker_client.api
+        registry, _ = docker.auth.resolve_repository_name(image)
+        header = docker.auth.get_config_header(api, registry)
 
-        Args:
-            repository: Repository.
-            tag: Tag.
-        """
-        raise NotImplementedError
-
-    def clear_cache(self) -> None:
-        """Clear image digest cache."""
-        self.get_image_digest.cache_clear()
-
-
-class DockerRegistryAdapter(ContainerRegistryAdapter):
-
-    """Docker registry adapter.
-
-    Args:
-        registry_host: Hostname of Docker registry. Defaults to Docker Hub.
-        auth: Docker auth token. Must be "username:password" base64-encoded.
-            Will try to read token from ``~/.docker/config.json`` if not specified.
-            Run ``docker login`` before relying on it.
-    """
-
-    def __init__(self, registry_host: str = 'index.docker.io', auth: Optional[str] = None):
-        self.registry_host = registry_host
-        self.auth = auth
-        if self.auth is None:
-            self.auth = self.load_auth_from_file()
-
-    @property
-    def registry_url(self):
-        return 'https://' + self.registry_host + '/v1/'
-
-    @lru_cache()
-    def get_image_digest(self, repository: str, tag: str) -> str:
-        from dxf import DXF
-        from dxf.exceptions import DXFUnauthorizedError
         try:
-            repository = f'library/{repository}' if '/' not in repository else repository
-            auth = 'Basic ' + self.auth if self.auth is not None else None
-            dxf = DXF(self.registry_host, repo=repository)
-            dxf.authenticate(authorization=auth, actions=['pull'])
-        except DXFUnauthorizedError:
-            raise RegistryAuthorizationException(f'Authentication with Docker registry {self.registry_host} failed. Run `docker login` first?')
-        try:
-            manifest = json.loads(dxf.get_manifest(tag))
-            return str(manifest['config']['digest'])
-        except DXFUnauthorizedError:
-            raise RegistryImageNotFoundException(f'Image {repository}:{tag} not found in registry {self.registry_host}')
+            url = api._url("/distribution/{0}/json", image)
+            headers = {'X-Registry-Auth': header} if header else {}
+            result = api._result(api._get(url, headers=headers), True)
+            return str(result['Descriptor']['digest'])
+        except HTTPError:
+            raise RegistryException(f"Image '{image}' not found in Docker registry '{registry}'")
 
-    def load_auth_from_file(self, file: str = '~/.docker/config.json') -> Optional[str]:
-        try:
-            with open(os.path.expanduser(file)) as f:
-                data = json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError):
-            return None
-        auth = data.get('auths', {}).get(self.registry_url, {}).get('auth', '')
-        if not auth and 'credsStore' in data:
-            return self.load_auth_from_cred_store(data['credsStore'])
-        return auth or None
-
-    def load_auth_from_cred_store(self, cred_store: str) -> Optional[str]:
-        if not re.match(r'^[\w\d\-_]+$', cred_store):
-            raise ValueError(f'{cred_store} is not a valid credentials store.')
-        try:
-            cmd = 'docker-credential-' + cred_store
-            p = subprocess.Popen([cmd, 'get'], stdout=subprocess.PIPE, stdin=subprocess.PIPE, stderr=subprocess.STDOUT)
-            out = p.communicate(input=self.registry_url.encode())[0]
-        except FileNotFoundError:
-            raise RuntimeError(f'Could not retrieve Docker credentials from credentials store "{cred_store}". Executable file "{cmd}" not found in $PATH.')
-        try:
-            credentials = json.loads(out)
-            username = credentials['Username']
-            password = credentials['Secret']
-        except (json.JSONDecodeError, KeyError, TypeError):
-            return None
-        else:
-            return b64encode(f'{username}:{password}'.encode()).decode('utf-8')
+    def push_image(self, image) -> str:
+        digest = None
+        push_stream = self.docker_client.api.push(repository=image, stream=True, decode=True)
+        for chunk in push_stream:
+            if 'error' in chunk:
+                raise RegistryException(chunk['error'])
+            if 'aux' in chunk:
+                digest = str(chunk['aux']['Digest'])
+        if not digest:
+            raise RegistryException('did not retrieve image digest from Docker after pushing image')
+        return digest
 
 
-class AmazonECRAdapter(ContainerRegistryAdapter):
+class AmazonECRAdapter(DockerRegistryAdapter):
 
     """Amazon Elastic Container Registry (ECR) adapter using boto3.
+
+    This is faster than using the DockerRegistryAdapter, which otherwise works fine for ECR too.
 
     Args:
         aws_access_key_id: AWS access key ID.
         aws_secret_access_key: AWS secret access key.
     """
 
-    def __init__(self, aws_access_key_id: Optional[str] = None, aws_secret_access_key: Optional[str] = None):
+    def __init__(self, docker_client: docker.DockerClient,
+                 aws_access_key_id: Optional[str] = None, aws_secret_access_key: Optional[str] = None):
         import boto3
+        self.docker_client = docker_client
         self.ecr_client = boto3.client('ecr', aws_access_key_id=aws_access_key_id, aws_secret_access_key=aws_secret_access_key)
 
-    @lru_cache()
-    def get_image_digest(self, repository: str, tag: str) -> str:
+    def docker_login(self, image: str) -> None:
+        registry, _, _ = self._split_image_string(image)
+        response = self.ecr_client.get_authorization_token(registryIds=[registry[:12]])
+        auth_token = response['authorizationData'][0]['authorizationToken']
+        username, password = b64decode(auth_token).decode('utf-8').split(':')
+        self.docker_client.login(username=username, password=password, registry=registry, reauth=True)
+
+    def get_image_digest(self, image: str) -> str:
+        registry, repository, tag = self._split_image_string(image)
+        if not tag:
+            raise ValueError('tag is required for images in Amazon ECR')
         try:
-            res = self.ecr_client.batch_get_image(imageIds=[{'imageTag': tag}], repositoryName=repository)
+            res = self.ecr_client.batch_get_image(registryId=registry[:12], repositoryName=repository, imageIds=[{'imageTag': tag}])
             return str(res['images'][0]['imageId']['imageDigest'])
-        except KeyError:
-            raise RegistryImageNotFoundException(f'Image {repository}:{tag} not found in Amazon ECR')
+        except (self.ecr_client.exceptions.RepositoryNotFoundException, KeyError):
+            raise RegistryException(f"Image '{repository}:{tag}' not found in Amazon ECR registry '{registry[:12]}'")
 
+    def push_image(self, image: str) -> str:
+        try:
+            return super().push_image(image)
+        except RegistryException as e:
+            if 'denied' in str(e):
+                self.docker_login(image)
+                return super().push_image(image)
+            else:
+                raise e
 
-class GCRAdapter(ContainerRegistryAdapter):
-
-    """Google Cloud Container Registry (gcr.io) adapter."""
-
-    def __init__(self):
-        pass
+    @staticmethod
+    def _split_image_string(image) -> Tuple[str, Optional[str], Optional[str]]:
+        match = re.match('(^[^:@]+)(?::([^@]+))?(?:@(.+))?$', image)
+        if match:
+            repository, tag, _ = match.groups()
+            registry, repository = docker.auth.resolve_repository_name(repository)
+            return registry, repository, tag
+        else:
+            raise ValueError(f"'{image}' is not a valid image string")

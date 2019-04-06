@@ -1,0 +1,32 @@
+- pipeline: test_e_pipeline_1
+  transform:
+    image: localhost:5000/test_e_pipeline_1:latest
+    dockerfile: |
+      FROM alpine:latest
+      WORKDIR /root
+      ENV TEST "1"
+    cmd: ["/bin/sh", "-c", "date > /pfs/out/date"]
+  input:
+    cron:
+      name: tick
+      spec: 0 * * * *
+
+- pipeline: test_e_pipeline_2
+  transform:
+    image: localhost:5000/test_e_pipeline_2:latest
+    dockerfile_path: ../image
+    cmd: ["/bin/sh", "-c", "date > /pfs/out/date1"]
+  input:
+    cron:
+      name: tick
+      spec: 0 * * * *
+
+- pipeline: test_e_pipeline_3
+  transform:
+    image: localhost:5000/test_e_pipeline_2:latest
+    dockerfile_path: ../image
+    cmd: ["/bin/sh", "-c", "date > /pfs/out/date2"]
+  input:
+    cron:
+      name: tick
+      spec: 0 * * * *

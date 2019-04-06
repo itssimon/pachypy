@@ -2,4 +2,4 @@
 
 from .client import PachydermClient
 from .pretty import PrettyPachydermClient
-from .registry import DockerRegistryAdapter, AmazonECRAdapter, GCRAdapter
+from .registry import DockerRegistryAdapter, AmazonECRAdapter

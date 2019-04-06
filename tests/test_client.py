@@ -4,7 +4,7 @@ import pytest
 import pandas as pd
 from unittest.mock import patch, MagicMock, PropertyMock, DEFAULT
 
-from pachypy.client import PachydermClient, PachydermClientException
+from pachypy.client import PachydermClient, PachydermClientError
 
 
 def get_mock_from_csv(file, datetime_cols=None, timedelta_cols=None, json_cols=None):
@@ -109,15 +109,15 @@ def pipeline_spec_files_path():
 def client(pipeline_spec_files_path):
     return PachydermClient(
         pipeline_spec_files=os.path.join(pipeline_spec_files_path, '*.yaml'),
-        update_image_digests=False
+        add_image_digests=False,
+        build_images=False
     )
 
 
 def test_init_registry_adapters(client: PachydermClient):
-    from pachypy.registry import DockerRegistryAdapter, AmazonECRAdapter  # , GCRAdapter
-    assert isinstance(client.docker_registry_adapter, DockerRegistryAdapter)
-    assert isinstance(client.ecr_adapter, AmazonECRAdapter)
-    # assert isinstance(client.gcr_adapter, GCRAdapter)
+    from pachypy.registry import DockerRegistryAdapter, AmazonECRAdapter
+    assert isinstance(client.docker_registry, DockerRegistryAdapter)
+    assert isinstance(client.amazon_ecr, AmazonECRAdapter)
 
 
 @patch_adapter()
@@ -135,7 +135,7 @@ def test_list_commits(client: PachydermClient, **mocks):
     df = client.list_commits('test_x_pipeline_*')
     assert len(df) == 10
     assert df['size_bytes'].gt(0).all()
-    with pytest.raises(PachydermClientException):
+    with pytest.raises(PachydermClientError):
         assert client.list_commits('repo_that_doesnt_exist')
 
 
@@ -151,9 +151,9 @@ def test_list_files(client: PachydermClient, **mocks):
     assert df['type'].eq('dir').any()
     df = client.list_files('test_x_pipeline_3', branch=None, commit=None, files_only=False)
     assert len(df) == 7
-    with pytest.raises(PachydermClientException):
+    with pytest.raises(PachydermClientError):
         assert client.list_files('test_x_pipeline_*', commit='e1d7e6912d5d4a3289e9fb7c82eec6b5')
-    with pytest.raises(PachydermClientException):
+    with pytest.raises(PachydermClientError):
         assert client.list_files('repo_that_doesnt_exist')
 
 
@@ -175,7 +175,7 @@ def test_list_jobs(client: PachydermClient, **mocks):
     assert len(client.list_jobs(n=5)) == 5
     assert len(client.list_jobs('test_x_pipeline_5')) == 2
     assert len(client.list_jobs('test_x_pipeline_*', n=1)) == 1
-    with pytest.raises(PachydermClientException):
+    with pytest.raises(PachydermClientError):
         assert client.list_jobs('pipeline_that_doesnt_exist')
 
 
@@ -198,7 +198,7 @@ def test_get_logs(client: PachydermClient, **mocks):
     assert len(client.get_logs('test_x_pipeline_5', last_job_only=False)) == 20
     assert len(client.get_logs('test_x_pipeline_5', user_only=True, last_job_only=False)) == 14
     assert len(client.get_logs('test_x_pipeline_5', datum='e52eea8fb37eafbfa9d04257f41f1e403b156d63b8135cb179cf142b5f1a08d5', last_job_only=False)) == 10
-    with pytest.raises(PachydermClientException):
+    with pytest.raises(PachydermClientError):
         assert client.get_logs('pipeline_that_doesnt_exist')
 
 
@@ -267,7 +267,7 @@ def test_put_timestamp_file(client: PachydermClient, **mocks):
 @patch_adapter()
 def test_trigger_pipeline(client: PachydermClient, **mocks):
     mocks['get_pipeline_cron_specs'].return_value = []
-    with pytest.raises(PachydermClientException):
+    with pytest.raises(PachydermClientError):
         client.trigger_pipeline('pipeline_without_cron_input')
 
     mocks['get_pipeline_cron_specs'].return_value = [{'repo': 'pipeline_tick', 'overwrite': True}]
@@ -331,19 +331,19 @@ def test_read_pipeline_specs(client: PachydermClient, pipeline_spec_files_path):
         pipeline_spec['test'] = True
         return pipeline_spec
     client.pipeline_spec_transformer = custom_transform_pipeline_spec
-    assert len(client._read_pipeline_specs('test*')) == 4
-    pipeline_specs = client._read_pipeline_specs('test_a*')
+    assert len(client.read_pipeline_specs('test*')) == 7
+    pipeline_specs = client.read_pipeline_specs('test_a*')
     assert isinstance(pipeline_specs, list) and len(pipeline_specs) == 2
     assert pipeline_specs[0]['pipeline']['name'] == 'test_a_pipeline_1'
     assert pipeline_specs[0]['transform']['image'] == pipeline_specs[1]['transform']['image']
     assert pipeline_specs[0]['test'] is True
 
     client.pipeline_spec_files = os.path.join(pipeline_spec_files_path, 'test_c.json')  # type: ignore
-    assert len(client._read_pipeline_specs('*')) == 1
+    assert len(client.read_pipeline_specs('*')) == 1
 
     with pytest.raises(ValueError):
         client.pipeline_spec_files = os.path.join(pipeline_spec_files_path, 'test_d.json')  # type: ignore
-        client._read_pipeline_specs('*')
+        client.read_pipeline_specs('*')
 
 
 @patch_adapter()
@@ -370,27 +370,22 @@ def test_stop_start_pipelines(client: PachydermClient, **mocks):
         assert client.start_pipelines('test_a*') == pipelines
 
 
-def test_update_image_digest(client: PachydermClient):
+def test_add_image_digest(client: PachydermClient):
     digest = 'sha1:123'
     tag = 'tag'
     with patch('pachypy.registry.DockerRegistryAdapter.get_image_digest', MagicMock(return_value=digest)) as mock:
         repo = 'user/repo'
-        assert client._update_image_digest(f'{repo}:{tag}') == f'{repo}:{tag}@{digest}'
-        assert client._update_image_digest(f'{repo}:{tag}@sha1:000') == f'{repo}:{tag}@{digest}'
-        mock.assert_called_with(repo, tag)
+        assert client._add_image_digest(f'{repo}:{tag}') == f'{repo}:{tag}@{digest}'
+        assert client._add_image_digest(f'{repo}:{tag}') == f'{repo}:{tag}@{digest}'
+        assert client._add_image_digest(f'{repo}:{tag}@sha1:000') == f'{repo}:{tag}@sha1:000'
+        mock.assert_called_once_with(f'{repo}:{tag}')
     with patch('pachypy.registry.AmazonECRAdapter.get_image_digest', MagicMock(return_value=digest)) as mock:
-        repo = 'xxx.dkr.ecr.xxx.amazonaws.com/repo'
-        assert client._update_image_digest(f'{repo}:{tag}') == f'{repo}:{tag}@{digest}'
-        assert client._update_image_digest(f'{repo}:{tag}@sha1:000') == f'{repo}:{tag}@{digest}'
-        mock.assert_called_with(repo, tag)
-    with patch('pachypy.registry.GCRAdapter.get_image_digest', MagicMock(return_value=digest)) as mock:
-        repo = 'gcr.io/repo'
-        assert client._update_image_digest(f'{repo}:{tag}') == f'{repo}:{tag}@{digest}'
-        assert client._update_image_digest(f'{repo}:{tag}@sha1:000') == f'{repo}:{tag}@{digest}'
-        mock.assert_called_with(repo, tag)
+        repo = '112233445566.dkr.ecr.xxx.amazonaws.com/repo'
+        assert client._add_image_digest(f'{repo}:{tag}') == f'{repo}:{tag}@{digest}'
+        mock.assert_called_once_with(f'{repo}:{tag}')
     with patch('pachypy.registry.DockerRegistryAdapter.get_image_digest', MagicMock(return_value=None)) as mock:
-        for image in ['user/repo:tag', 'user/repo:tag@sha1:000']:
-            assert client._update_image_digest(image) == image
+        for image in ['user/repo2:tag', 'user/repo2:tag@sha1:000']:
+            assert client._add_image_digest(image) == image
 
 
 def test_wildcard_filter():
@@ -407,13 +402,6 @@ def test_wildcard_filter():
     assert _wildcard_filter(x, [['a*'], 'b']) == x
     assert _wildcard_filter(x, ['*a', '*b']) == x
     assert _wildcard_filter(x, ['a', 'b']) == ['a', 'b']
-
-
-def test_split_image_string():
-    from pachypy.client import _split_image_string
-    assert _split_image_string('a.b/c:d@sha1:e') == ('a.b/c', 'd', 'sha1:e')
-    assert _split_image_string('a.b/c:d') == ('a.b/c', 'd', None)
-    assert _split_image_string('a.b/c') == ('a.b/c', None, None)
 
 
 def test_expand_files():

@@ -4,7 +4,7 @@ import random
 import pytest
 from unittest import mock
 
-from pachypy.adapter import PachydermAdapter, PachydermCommitAdapter, PachydermException
+from pachypy.adapter import PachydermAdapter, PachydermCommitAdapter, PachydermError
 
 
 @pytest.fixture(scope='module')
@@ -161,14 +161,14 @@ def skip_if_pachyderm_unavailable(adapter: PachydermAdapter):
 def delete_pipeline_if_exists(adapter: PachydermAdapter, pipeline_name):
     try:
         adapter.delete_pipeline(pipeline_name)
-    except PachydermException:
+    except PachydermError:
         pass
 
 
 def delete_repo_if_exists(adapter: PachydermAdapter, repo_name):
     try:
         adapter.delete_repo(repo_name)
-    except PachydermException:
+    except PachydermError:
         pass
 
 
@@ -256,7 +256,7 @@ def test_create_update_delete_pipeline(adapter, pipeline_1):
     adapter.delete_pipeline(pipeline_name)
     assert pipeline_name not in adapter.list_pipeline_names()
 
-    with pytest.raises(PachydermException):
+    with pytest.raises(PachydermError):
         adapter.delete_pipeline('pipeline_that_does_not_exist')
 
 
@@ -309,7 +309,7 @@ def test_commit_context_manager(adapter: PachydermAdapter, repo):
     assert c.commit is not None and c.finished is True
     assert len(adapter.list_commits(repo)) == 1
     assert adapter.list_branch_heads(repo)['master'] == c.commit
-    with pytest.raises(PachydermException):
+    with pytest.raises(PachydermError):
         with c:
             pass
     assert len(adapter.list_commits(repo)) == 1

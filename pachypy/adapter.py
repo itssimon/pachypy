@@ -17,7 +17,7 @@ from python_pachyderm.client.pfs.pfs_pb2 import (
 )
 from python_pachyderm.client.pfs.pfs_pb2_grpc import APIStub as PfsAPIStub
 from python_pachyderm.client.pps.pps_pb2 import (
-    Pipeline, Job, Input,
+    Pipeline, Job, Input, Transform,
     ListPipelineRequest, ListJobRequest, ListDatumRequest, GetLogsRequest, DeleteJobRequest,
     CreatePipelineRequest, DeletePipelineRequest, StartPipelineRequest, StopPipelineRequest, InspectPipelineRequest,
     FAILED as DATUM_FAILED, SUCCESS as DATUM_SUCCESS, SKIPPED as DATUM_SKIPPED, STARTING as DATUM_STARTING,
@@ -32,7 +32,7 @@ from python_pachyderm.client.version.versionpb.version_pb2_grpc import APIStub a
 T = TypeVar('T')
 
 
-class PachydermException(Exception):
+class PachydermError(Exception):
 
     def __init__(self, message: str, code=None):
         super().__init__(message)
@@ -54,7 +54,7 @@ def retry(f: T) -> T:
                 if adapter.check_connectivity():
                     adapter._retries += 1
                     return retry_wrapper(self, *args, **kwargs)
-            raise PachydermException(e.details(), e.code())
+            raise PachydermError(e.details(), e.code())
         else:
             adapter._retries = 0
             adapter._connectable = True
@@ -384,12 +384,17 @@ class PachydermAdapter:
         })
 
     @retry
-    def create_pipeline(self, pipeline_specs: dict) -> None:
-        self.pps_stub.CreatePipeline(CreatePipelineRequest(**pipeline_specs))
+    def create_pipeline(self, pipeline_spec: dict) -> None:
+        fields = {f.name for f in CreatePipelineRequest.DESCRIPTOR.fields}
+        transform_fields = {f.name for f in Transform.DESCRIPTOR.fields}
+        pipeline_spec = {k: v for k, v in pipeline_spec.items() if k in fields}
+        pipeline_spec['transform'] = {k: v for k, v in pipeline_spec['transform'].items() if k in transform_fields}
+        self.pps_stub.CreatePipeline(CreatePipelineRequest(**pipeline_spec))
 
-    @retry
-    def update_pipeline(self, pipeline_specs: dict, reprocess: bool = False) -> None:
-        self.pps_stub.CreatePipeline(CreatePipelineRequest(update=True, reprocess=reprocess, **pipeline_specs))
+    def update_pipeline(self, pipeline_spec: dict, reprocess: bool = False) -> None:
+        pipeline_spec['update'] = True
+        pipeline_spec['reprocess'] = reprocess
+        self.create_pipeline(pipeline_spec)
 
     @retry
     def delete_pipeline(self, pipeline: str) -> None:
@@ -600,7 +605,7 @@ class PachydermCommitAdapter:
 
     def _raise_if_finished(self):
         if self.finished:
-            raise PachydermException(f'Commit {self.commit} is already finished')
+            raise PachydermError(f'Commit {self.commit} is already finished')
 
 
 def _pipeline_input_cron_specs(i: Input) -> Generator[Dict[str, Any], None, None]:
