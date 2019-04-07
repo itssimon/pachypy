@@ -7,6 +7,7 @@ from base64 import b64decode
 from requests.exceptions import HTTPError
 from typing import Tuple, Optional
 
+import boto3
 import docker
 
 
@@ -65,13 +66,11 @@ class AmazonECRAdapter(DockerRegistryAdapter):
     """
 
     def __init__(self, docker_client: docker.DockerClient):
-        import boto3
         self.docker_client = docker_client
-        self.boto3 = boto3
         self.ecr_client = boto3.client('ecr')
 
     def set_credentials(self, aws_access_key_id: str, aws_secret_access_key: str):
-        self.ecr_client = self.boto3.client('ecr', aws_access_key_id=aws_access_key_id, aws_secret_access_key=aws_secret_access_key)
+        self.ecr_client = boto3.client('ecr', aws_access_key_id=aws_access_key_id, aws_secret_access_key=aws_secret_access_key)
 
     def login(self, registry: str) -> None:
         response = self.ecr_client.get_authorization_token(registryIds=[registry[:12]])
