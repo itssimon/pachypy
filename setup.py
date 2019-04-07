@@ -1,10 +1,23 @@
 from setuptools import setup, find_packages
 
+with open('README.md', 'r') as fh:
+    long_description = fh.read()
+
 setup(
     name='pachypy',
     version='0.1.1',
     author='Simon Gurcke',
+    description='Python client library for Pachyderm',
+    long_description=long_description,
+    long_description_content_type='text/markdown',
+    url='https://github.com/itssimon/pachypy',
     packages=find_packages(),
+    classifiers=[
+        'Development Status :: 3 - Alpha',
+        'Programming Language :: Python :: 3 :: Only',
+        'Operating System :: OS Independent',
+        'License :: OSI Approved :: Apache Software License',
+    ],
     install_requires=[
         'python_pachyderm>=1.8.6',
         'docker>=3.7.2',
