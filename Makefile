@@ -8,4 +8,7 @@ test:
 build-docs:
 	$(MAKE) -C docs/ html
 
-.PHONY: install test build-docs
+publish:
+	python3 -m twine upload dist/*
+
+.PHONY: install test build-docs publish
