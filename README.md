@@ -1,4 +1,4 @@
-# pachypy - A Python client library and CLI for Pachyderm
+# pachypy - A Python client library for Pachyderm
 
 [![Python 3.5](https://img.shields.io/badge/python-3.5+-blue.svg)](#)
 [![Documentation Status](https://readthedocs.org/projects/pachypy/badge/?version=latest)](https://pachypy.readthedocs.io/en/latest/?badge=latest)
@@ -8,71 +8,34 @@
 [![Stability Status](https://img.shields.io/badge/stability-alpha-yellow.svg)](#)
 [![Gitter](https://badges.gitter.im/pachypy/community.svg)](https://gitter.im/pachypy/community)
 
-This package aims to make interactions with a [Pachyderm](https://github.com/pachyderm/pachyderm) cluster more efficient and user-friendly.
+This package aims to make interactions with [Pachyderm](https://github.com/pachyderm/pachyderm) more pythonic and user-friendly.
 
-It is primarily intended to be used in a Jupyter notebook environment. A command-line interface is also provided.
+It is primarily intended to be used interactively in a Jupyter notebook environment.
 
-Current functionality includes:
+Key features include:
 
-- Get info about repos, pipelines and jobs as (styled) pandas DataFrames
-- Retrieve and pretty print logs
-- Create, update and delete pipelines in batch using shell-style wildcards
-- Read pipeline specs from YAML files, supporting multiple pipelines per file
-- Automatically add image digests when creating/updating pipelines to ensure Kubernetes pulls the latest version of images used in pipelines
-- Custom transformation of pipeline specs (e.g. programmatically add fields) before creating/updating pipelines
+- Show Pachyderm objects (such as repositories, pipelines, jobs, etc.) as nicely formatted tables, backed by [pandas](https://github.com/pandas-dev/pandas) DataFrames
+- Batch operations using shell-style wildcards on Pachyderm objects
+- Create and update pipelines from specifications in YAML format, supporting multiple pipelines per file
+- Build and push Docker images before creating and updating pipelines
+- Add image digests when creating and updating pipelines to ensure the latest images are used in pipelines without requiring a tag change
 
-pachypy builds on top of the official [python_pachyderm](https://github.com/pachyderm/python-pachyderm) package.
+pachypy uses the protobufs from the official [python_pachyderm](https://github.com/pachyderm/python-pachyderm) package to communicate with Pachyderm.
 
 *Requires Python 3.5 or higher*
 
 ## Installation
 
 ```bash
-pip install git+https://github.com/itssimon/pachypy.git
+pip install pachypy
 ```
 
-pachypy will be pushed to PyPI and conda-forge soon.
+## Usage examples
 
-## Usage in notebook
+- [Example notebook](https://github.com/itssimon/pachypy/blob/master/examples/usage.ipynb)
+- [Example pipeline specifications in YAML format](https://github.com/itssimon/pachypy/blob/master/examples/pipelines.yaml)
 
-### Initialise client
 
-```python
-from pachypy import PachydermClient
+## Need help?
 
-pachy = PachydermClient(host='localhost')
-```
-
-### Get info about repos, pipelines and jobs
-
-```python
-# Get list of repos
-pachy.list_repo()
-
-# Get list of pipelines
-pachy.list_pipeline()
-
-# Get list of jobs
-pachy.list_job()
-
-# Get list of jobs for pipelines starting with 'test'
-pachy.list_job('test*')
-```
-
-### Get logs
-
-```python
-# Print logs for last job of pipelines starting with 'test'
-pachy.get_logs('test*')
-
-# Print logs for all jobs of pipelines starting with 'test'
-pachy.get_logs('test*', last_job_only=False)
-```
-
-### Create, update and delete pipelines
-
-```python
-...
-```
-
-*Work in progress...*
+Let's [chat on Gitter](https://gitter.im/pachypy/community) or open an issue on GitHub.
