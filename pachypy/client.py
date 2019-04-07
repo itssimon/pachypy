@@ -66,6 +66,7 @@ class PachydermClient:
         pipeline_spec_transformer: Optional[Callable[[dict], dict]] = None,
     ):
         self._pipeline_spec_files: FileGlob = None
+        self._docker_client: Optional[DockerClient] = None
         self._docker_registry: Optional[DockerRegistryAdapter] = None
         self._amazon_ecr: Optional[AmazonECRAdapter] = None
         self._image_digests: Dict[str, str] = {}
@@ -73,7 +74,6 @@ class PachydermClient:
         self._logger: Optional[logging.Logger] = None
 
         self.adapter = PachydermAdapter(host=host, port=port)
-        self.docker_client = DockerClient.from_env()
         self.add_image_digests = add_image_digests
         self.build_images = build_images
         self.pipeline_spec_files = pipeline_spec_files
@@ -96,14 +96,28 @@ class PachydermClient:
         self._pipeline_spec_files = files
 
     @property
+    def docker_client(self) -> DockerClient:
+        if self._docker_client is None:
+            self._docker_client = DockerClient.from_env()
+        return self._docker_client
+
+    @docker_client.setter
+    def docker_client(self, docker_client: DockerClient):
+        self._docker_client = docker_client
+        if self._docker_registry is not None:
+            self._docker_registry.docker_client = docker_client
+        if self._amazon_ecr is not None:
+            self._amazon_ecr.docker_client = docker_client
+
+    @property
     def docker_registry(self) -> DockerRegistryAdapter:
         if self._docker_registry is None:
             self._docker_registry = DockerRegistryAdapter(self.docker_client)
         return self._docker_registry
 
     @docker_registry.setter
-    def docker_registry(self, adapter: DockerRegistryAdapter):
-        self._docker_registry = adapter
+    def docker_registry(self, docker_registry: DockerRegistryAdapter):
+        self._docker_registry = docker_registry
 
     @property
     def amazon_ecr(self) -> AmazonECRAdapter:
@@ -112,8 +126,8 @@ class PachydermClient:
         return self._amazon_ecr
 
     @amazon_ecr.setter
-    def amazon_ecr(self, adapter: AmazonECRAdapter):
-        self._amazon_ecr = adapter
+    def amazon_ecr(self, amazon_ecr: AmazonECRAdapter):
+        self._amazon_ecr = amazon_ecr
 
     @property
     def pachd_version(self) -> str:
