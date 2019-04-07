@@ -391,6 +391,7 @@ def test_commit_flush(adapter: PachydermAdapter, pipeline_5):
     skip_if_pachyderm_unavailable(adapter)
     pipeline = pipeline_5['pipeline']['name']
     repo = pipeline_5['input']['pfs']['repo']
+    assert await_pipeline_new_state(adapter, pipeline) == 'running'
     with PachydermCommitAdapter(adapter, repo, flush=True) as c:
         c.put_file_bytes(b'a b c d e f g h i j\n', 'file1')
         c.put_file_bytes(b'k l m n o p q r s t\n', 'file2')
