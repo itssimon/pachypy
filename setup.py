@@ -7,7 +7,7 @@ setup(
     packages=find_packages(),
     install_requires=[
         'python_pachyderm>=1.8.6',
-        'python-dxf>=7.5.0',
+        'docker>=3.7.2',
         'boto3>=1.9.119',
         'pandas>=0.24.2',
         'pyyaml>=3.13',
@@ -16,9 +16,6 @@ setup(
         'ipython>=7.4.0',
     ],
     extras_require={
-        'ecr': [
-            'boto3>=1.9.120'
-        ],
         'docs':  [
             'sphinx>=2.0.0',
             'sphinx_rtd_theme>=0.4.3',
