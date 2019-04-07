@@ -115,19 +115,11 @@ class PachydermClient:
             self._docker_registry = DockerRegistryAdapter(self.docker_client)
         return self._docker_registry
 
-    @docker_registry.setter
-    def docker_registry(self, docker_registry: DockerRegistryAdapter):
-        self._docker_registry = docker_registry
-
     @property
     def amazon_ecr(self) -> AmazonECRAdapter:
         if self._amazon_ecr is None:
             self._amazon_ecr = AmazonECRAdapter(self.docker_client)
         return self._amazon_ecr
-
-    @amazon_ecr.setter
-    def amazon_ecr(self, amazon_ecr: AmazonECRAdapter):
-        self._amazon_ecr = amazon_ecr
 
     @property
     def pachd_version(self) -> str:
