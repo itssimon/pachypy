@@ -37,4 +37,4 @@ pip install pachypy
 
 ## Getting help
 
-Let's [chat on Gitter](https://gitter.im/pachypy/community) or open an issue on GitHub.
+Let's [chat on Gitter](https://gitter.im/pachypy/community) or open an [issue](https://github.com/itssimon/pachypy/issues) on GitHub.
