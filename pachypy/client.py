@@ -646,17 +646,19 @@ class PachydermClient:
             pipeline_specs: Pipeline specifications to transform.
         """
         previous_image = None
+        previous_file = None
         for pipeline in pipeline_specs:
             if isinstance(pipeline['pipeline'], str):
                 pipeline['pipeline'] = {'name': pipeline['pipeline']}
-            if 'image' not in pipeline['transform'] and previous_image is not None:
+            if 'image' not in pipeline['transform'] and previous_image is not None and pipeline['_file'] == previous_file:
                 pipeline['transform']['image'] = previous_image
             if 'dockerfile_path' in pipeline['transform']:
                 path = Path(pipeline['transform']['dockerfile_path'])
-                if path.is_absolute():
-                    pipeline['transform']['dockerfile_path'] = path.resolve()
-                else:
-                    pipeline['transform']['dockerfile_path'] = (pipeline['_file'].parent / path).resolve()
+                if not path.is_absolute():
+                    path = pipeline['_file'].parent / path
+                if not path.is_dir() and path.name.lower() == 'dockerfile':
+                    path = path.parent
+                pipeline['transform']['dockerfile_path'] = path.resolve()
             if callable(self.pipeline_spec_transformer):
                 pipeline = self.pipeline_spec_transformer(pipeline)
             previous_image = pipeline['transform']['image']
