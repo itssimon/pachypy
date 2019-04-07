@@ -9,6 +9,7 @@ build-docs:
 	$(MAKE) -C docs/ html
 
 publish:
+	python3 setup.py sdist bdist_wheel
 	python3 -m twine upload dist/*
 
 .PHONY: install test build-docs publish
