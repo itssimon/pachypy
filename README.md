@@ -30,10 +30,11 @@ pachypy uses the protobufs from the official [python_pachyderm](https://github.c
 pip install pachypy
 ```
 
-## Usage examples
+## Documentation
 
 - [Example notebook](https://github.com/itssimon/pachypy/blob/master/examples/usage.ipynb)
 - [Example pipeline specifications in YAML format](https://github.com/itssimon/pachypy/blob/master/examples/pipelines.yaml)
+- [API reference](https://pachypy.readthedocs.io/en/latest/index.html)
 
 ## Getting help
 
