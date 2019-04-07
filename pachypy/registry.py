@@ -54,7 +54,10 @@ class AmazonECRAdapter(DockerRegistryAdapter):
 
     """Amazon Elastic Container Registry (ECR) adapter using boto3.
 
-    This is faster than using the DockerRegistryAdapter, which otherwise works fine for ECR too.
+    Getting image digests via boto3 is faster than using the DockerRegistryAdapter,
+    which otherwise works fine for ECR too.
+    When pushing images, this class also handles logging in to ECR by getting an
+    authorization token using boto3 and passing it to Docker to log in.
 
     Args:
         aws_access_key_id: AWS access key ID.
