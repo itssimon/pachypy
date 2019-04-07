@@ -81,7 +81,7 @@ class PrettyPachydermClient(PachydermClient):
         styler = df[['Repo', 'Tick', 'Branches', 'Size', 'Created']].style \
             .bar(subset=['Size'], color=BAR_COLOR, vmin=0) \
             .format({'Created': _format_datetime, 'Size': _format_size}) \
-            .set_properties(subset=['Branches'], **{'white-space': 'wrap'}) \
+            .set_properties(subset=['Branches'], **{'white-space': 'normal !important'}) \
             .set_table_styles(self.table_styles) \
             .hide_index()
         return PrettyOutput(styler, df)
@@ -132,7 +132,7 @@ class PrettyPachydermClient(PachydermClient):
                 'Branch': ', '.join,
                 'Committed': _format_datetime
             }) \
-            .set_properties(subset=['Path'], **{'white-space': 'wrap'}) \
+            .set_properties(subset=['Path'], **{'white-space': 'normal !important'}) \
             .set_table_styles(self.table_styles) \
             .hide_index()
         return PrettyOutput(styler, df)
@@ -164,7 +164,7 @@ class PrettyPachydermClient(PachydermClient):
         styler = df[['Pipeline', 'State', 'Cron', 'Input', 'Output', 'Tries', 'Parallelism', 'Jobs', 'Created']].style \
             .apply(_style_pipeline_state, subset=['State']) \
             .format({'State': _format_pipeline_state, 'Created': _format_datetime}) \
-            .set_properties(subset=['Input'], **{'white-space': 'wrap'}) \
+            .set_properties(subset=['Input'], **{'white-space': 'normal !important'}) \
             .set_table_styles(self.table_styles) \
             .hide_index()
         return PrettyOutput(styler, df)
@@ -231,7 +231,7 @@ class PrettyPachydermClient(PachydermClient):
                 'Commit': _hash,
                 'Committed': _format_datetime
             }) \
-            .set_properties(subset=['Path'], **{'white-space': 'wrap'}) \
+            .set_properties(subset=['Path'], **{'white-space': 'normal !important'}) \
             .set_table_styles(self.table_styles) \
             .hide_index()
         return PrettyOutput(styler, df)
