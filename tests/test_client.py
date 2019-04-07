@@ -362,6 +362,7 @@ def test_read_pipeline_specs(client: PachydermClient, pipeline_spec_files_path):
 
 
 def test_build_push_image(client: PachydermClient, docker_registry):
+    del docker_registry
     pipeline_specs = client.read_pipeline_specs('test_e_*')
     for pipeline_spec in pipeline_specs:
         client._build_image(pipeline_spec)
