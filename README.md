@@ -35,7 +35,6 @@ pip install pachypy
 - [Example notebook](https://github.com/itssimon/pachypy/blob/master/examples/usage.ipynb)
 - [Example pipeline specifications in YAML format](https://github.com/itssimon/pachypy/blob/master/examples/pipelines.yaml)
 
-
-## Need help?
+## Getting help
 
 Let's [chat on Gitter](https://gitter.im/pachypy/community) or open an issue on GitHub.
