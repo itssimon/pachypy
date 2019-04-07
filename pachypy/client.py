@@ -664,8 +664,11 @@ class PachydermClient:
         for pipeline in pipeline_specs:
             if isinstance(pipeline['pipeline'], str):
                 pipeline['pipeline'] = {'name': pipeline['pipeline']}
-            if 'image' not in pipeline['transform'] and previous_image is not None and pipeline['_file'] == previous_file:
-                pipeline['transform']['image'] = previous_image
+            if 'image' not in pipeline['transform']:
+                if previous_image is not None and pipeline['_file'] == previous_file:
+                    pipeline['transform']['image'] = previous_image
+                else:
+                    raise ValueError(f"Pipeline '{pipeline['pipeline']['name']}' is missing the `transform.image` field")
             if 'dockerfile_path' in pipeline['transform']:
                 path = Path(pipeline['transform']['dockerfile_path'])
                 if not path.is_absolute():
