@@ -44,7 +44,7 @@ class PachydermClient:
 
     Args:
         host: Hostname or IP address to reach pachd. Attempts to get this from the
-            environment variablePACHD_ADDRESS or ``~/.pachyderm/config.json`` if not set.
+            environment variable PACHD_ADDRESS or ``~/.pachyderm/config.json`` if not set.
         port: Port on which pachd is listening. Defaults to 30650.
         add_image_digests: Whether to add a digest to the image field in pipeline specs to
             to force Pachyderm to pull the latest version from the container registry.
