@@ -1,0 +1,46 @@
+# With pachypy you can define multiple pipelines in the same YAML or JSON file.
+# It makes sense to have one file for a set of pipelines that depend on each other.
+
+- pipeline: example_pipeline_1  # Notice the optional shortcut? (no nested name)
+  transform:
+    # Increasing version numbers in the image tag are now optional,
+    # because pachypy can automatically add the latest digest (@sha256:xxxx) instead,
+    # which will cause Kubernetes to pull the latest image from the registry
+    image: registry_host.net/custom_pipeline_image:some_tag
+    # You can define your image right here if you don't need a build context
+    dockerfile: |
+      FROM alpine:latest
+      WORKDIR /root
+      RUN apt-get -qq update && \
+        apt-get -y --no-install-recommends install wget
+      RUN wget http://example.com/some_script.sh
+    # The following options are passed into the Docker build() function if specified
+    # See https://docker-py.readthedocs.io/en/stable/images.html#docker.models.images.ImageCollection.build
+    docker_build_options:
+      nocache: True
+    cmd: ["/bin/sh", "-c", "some_script.sh > /pfs/out/script_output"]
+  input:
+    cron:
+      name: tick
+      spec: 0 * * * *
+
+- pipeline: example_pipeline_2
+  transform:
+    image: registry_host.net/custom_pipeline_image:other_tag
+    # You can also define the path to the Dockerfile,
+    # which is interpreted relative to the pipeline spec file if not absolute
+    dockerfile_path: ../some/path/to/Dockerfile
+    cmd: ["/bin/sh", "-c", "cat /pfs/example_pipeline_1/*"]
+  input:
+    pfs:
+      repo: example_pipeline_1
+      glob: "*"
+
+- pipeline: example_pipeline_3
+  transform:
+    # You can omit the image field if it the same as a pipeline defined above
+    cmd: ["/bin/sh", "-c", "cat /pfs/example_pipeline_2/*"]
+  input:
+    pfs:
+      repo: example_pipeline_2
+      glob: "*"
