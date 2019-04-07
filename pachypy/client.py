@@ -676,6 +676,7 @@ class PachydermClient:
             if callable(self.pipeline_spec_transformer):
                 pipeline = self.pipeline_spec_transformer(pipeline)
             previous_image = pipeline['transform']['image']
+            previous_file = pipeline['_file']
         return pipeline_specs
 
     def _get_registry_adapter(self, image: str) -> DockerRegistryAdapter:
