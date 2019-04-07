@@ -36,6 +36,7 @@ def test_format_datetime():
     from pachypy.pretty import _format_datetime
     t = datetime.now()
     t = [t.year, t.month, t.day]
+    assert _format_datetime(None) == ''
     assert _format_datetime(datetime(2019, 1, 2, 11, 11, 23)) == '2 Jan 2019 at 11:11'
     assert _format_datetime(datetime(2019, 2, 3, 23, 11, 59)) == '3 Feb 2019 at 23:11'
     assert _format_datetime(datetime(*t + [11, 11])) == 'Today at 11:11'
@@ -47,6 +48,7 @@ def test_format_date():
     from datetime import date
     from dateutil.relativedelta import relativedelta as rd
     from pachypy.pretty import _format_date
+    assert _format_date(None) == ''
     assert _format_date(date(2019, 1, 2)) == '2 Jan 2019'
     assert _format_date(date(2019, 2, 3)) == '3 Feb 2019'
     assert _format_date(date.today()) == 'Today'
@@ -56,6 +58,7 @@ def test_format_date():
 
 def test_format_duration():
     from pachypy.pretty import _format_duration
+    assert _format_duration(None) == ''
     assert _format_duration(0) == ''
     assert _format_duration(0.001) == '1 ms'
     assert _format_duration(1) == '1 sec'

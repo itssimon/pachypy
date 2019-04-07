@@ -347,6 +347,7 @@ def test_read_pipeline_specs(client: PachydermClient, pipeline_spec_files_path):
         return pipeline_spec
     client.pipeline_spec_transformer = custom_transform_pipeline_spec
     assert len(client.read_pipeline_specs('test*')) == 7
+    assert len(client.read_pipeline_specs('not_a_test*')) == 0
     pipeline_specs = client.read_pipeline_specs('test_a*')
     assert isinstance(pipeline_specs, list) and len(pipeline_specs) == 2
     assert pipeline_specs[0]['pipeline']['name'] == 'test_a_pipeline_1'
@@ -371,6 +372,8 @@ def test_build_push_image(client: PachydermClient, docker_registry):
         assert image in client._image_digests
         assert client._image_digests[image].startswith('sha')
         assert client.docker_registry.get_image_digest(image) == client._image_digests[image]
+    client.clear_cache()
+    assert len(client._built_images) == len(client._image_digests) == 0
 
 
 @patch_adapter()

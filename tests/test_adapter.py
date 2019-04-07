@@ -222,6 +222,11 @@ def test_check_connectivity():
     assert adapter.check_connectivity() is False
 
 
+def test_get_version(adapter: PachydermAdapter):
+    version = adapter.get_version()
+    assert len(version.split('.')) == 3
+
+
 def test_create_delete_repo(adapter: PachydermAdapter):
     skip_if_pachyderm_unavailable(adapter)
     repo_name = 'test_repo_a1b2c'
