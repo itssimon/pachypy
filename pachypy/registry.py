@@ -73,8 +73,7 @@ class AmazonECRAdapter(DockerRegistryAdapter):
     def set_credentials(self, aws_access_key_id: str, aws_secret_access_key: str):
         self.ecr_client = self.boto3.client('ecr', aws_access_key_id=aws_access_key_id, aws_secret_access_key=aws_secret_access_key)
 
-    def docker_login(self, image: str) -> None:
-        registry, _, _ = self._split_image_string(image)
+    def login(self, registry: str) -> None:
         response = self.ecr_client.get_authorization_token(registryIds=[registry[:12]])
         auth_token = response['authorizationData'][0]['authorizationToken']
         username, password = b64decode(auth_token).decode('utf-8').split(':')
@@ -95,7 +94,8 @@ class AmazonECRAdapter(DockerRegistryAdapter):
             return super().push_image(image)
         except RegistryException as e:
             if 'denied' in str(e):
-                self.docker_login(image)
+                registry = self._split_image_string(image)[0]
+                self.login(registry)
                 return super().push_image(image)
             else:
                 raise e
