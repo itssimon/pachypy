@@ -114,6 +114,21 @@ def client(pipeline_spec_files_path):
     )
 
 
+@pytest.fixture(scope='module')
+def docker_registry():
+    import docker
+    client = docker.DockerClient()
+    try:
+        container = client.containers.get('test_registry')
+        if container.status != 'running':
+            container.restart()
+    except docker.errors.NotFound:
+        container = client.containers.run('registry:2', name='test_registry', detach=True, ports={'5000/tcp': 5000})
+    yield container
+    container.stop()
+    container.remove()
+
+
 def test_init_registry_adapters(client: PachydermClient):
     from pachypy.registry import DockerRegistryAdapter, AmazonECRAdapter
     assert isinstance(client.docker_registry, DockerRegistryAdapter)
@@ -344,6 +359,17 @@ def test_read_pipeline_specs(client: PachydermClient, pipeline_spec_files_path):
     with pytest.raises(ValueError):
         client.pipeline_spec_files = os.path.join(pipeline_spec_files_path, 'test_d.json')  # type: ignore
         client.read_pipeline_specs('*')
+
+
+def test_build_push_image(client: PachydermClient, docker_registry):
+    pipeline_specs = client.read_pipeline_specs('test_e_*')
+    for pipeline_spec in pipeline_specs:
+        client._build_image(pipeline_spec)
+        image = pipeline_spec['transform']['image']
+        assert image in client._built_images
+        assert image in client._image_digests
+        assert client._image_digests[image].startswith('sha')
+        assert client.docker_registry.get_image_digest(image) == client._image_digests[image]
 
 
 @patch_adapter()
