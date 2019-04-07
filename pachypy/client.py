@@ -578,7 +578,7 @@ class PachydermClient:
             if isinstance(file_content, list) and len(file_content) > 0:
                 for i, pipeline_spec in enumerate(file_content):
                     if isinstance(pipeline_spec, dict) and all(k in pipeline_spec for k in ('pipeline', 'transform', 'input')):
-                        pipeline_spec['file'] = Path(file)
+                        pipeline_spec['_file'] = Path(file)
                         pipeline_specs.append(pipeline_spec)
                     else:
                         raise ValueError(f"Item {i + 1} in file '{file}' does not look like a pipeline specification")
@@ -656,7 +656,7 @@ class PachydermClient:
                 if path.is_absolute():
                     pipeline['transform']['dockerfile_path'] = path.resolve()
                 else:
-                    pipeline['transform']['dockerfile_path'] = (pipeline['file'].parent / path).resolve()
+                    pipeline['transform']['dockerfile_path'] = (pipeline['_file'].parent / path).resolve()
             if callable(self.pipeline_spec_transformer):
                 pipeline = self.pipeline_spec_transformer(pipeline)
             previous_image = pipeline['transform']['image']
