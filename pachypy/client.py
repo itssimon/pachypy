@@ -43,13 +43,17 @@ class PachydermClient:
     """Pachyderm client.
 
     Args:
-        host: Hostname or IP address to reach pachd. Attempts to get this from PACHD_ADDRESS or ``~/.pachyderm/config.json`` if not set.
-        port: Port on which pachd is listening (usually 30650).
-        add_image_digests: Whether to add the latest digests to the image field in pipeline specs to
+        host: Hostname or IP address to reach pachd. Attempts to get this from the
+            environment variablePACHD_ADDRESS or ``~/.pachyderm/config.json`` if not set.
+        port: Port on which pachd is listening. Defaults to 30650.
+        add_image_digests: Whether to add a digest to the image field in pipeline specs to
             to force Pachyderm to pull the latest version from the container registry.
-        pipeline_spec_files: Glob pattern(s) to pipeline spec files in YAML format.
-        pipeline_spec_transformer: Function that takes a pipeline spec as dictionary as the only argument
-            and returns a transformed pipeline spec.
+        build_images: Whether to build Docker images for pipelines and push them
+            to the container registry. Only applies to pipelines that have the `dockerfile`
+            or `dockerfile_path` directive set within the `transform` field.
+        pipeline_spec_files: Glob pattern(s) to pipeline spec files in YAML or JSON format.
+        pipeline_spec_transformer: Function that takes a pipeline spec as dictionary
+            as the only argument and returns a transformed pipeline spec.
     """
 
     def __init__(
@@ -443,7 +447,8 @@ class PachydermClient:
 
         Args:
             pipelines: Pattern to filter pipeline specs by pipeline name. Supports shell-style wildcards.
-            pipeline_specs: Pipeline specifications. Specs are read from files (see property pipeline_spec_files) if not specified.
+            pipeline_specs: Pipeline specifications. These are read from files
+                (see property `pipeline_spec_files`) if not specified.
             recreate: Whether to delete existing pipelines before recreating them.
 
         Returns:
@@ -460,7 +465,8 @@ class PachydermClient:
 
         Args:
             pipelines: Pattern to filter pipeline specs by pipeline name. Supports shell-style wildcards.
-            pipeline_specs: Pipeline specifications. Specs are read from files (see property pipeline_spec_files) if not specified.
+            pipeline_specs: Pipeline specifications. These are read from files
+                (see property `pipeline_spec_files`) if not specified.
             recreate: Whether to delete existing pipelines before recreating them.
             reprocess: Whether to reprocess datums with updated pipeline.
 
@@ -538,7 +544,7 @@ class PachydermClient:
         self.adapter.delete_job(job)
 
     def read_pipeline_specs(self, pipelines: WildcardFilter = '*') -> List[dict]:
-        """Read pipelines specs from files.
+        """Read pipelines specifications from YAML or JSON files.
 
         The spec files are defined through the `pipeline_spec_files` property,
         which can be a list of file paths or glob patterns.
@@ -549,7 +555,6 @@ class PachydermClient:
         Args:
             pipelines: Pattern to filter pipeline specs by pipeline name. Supports shell-style wildcards.
         """
-        # Subset list of files
         files = self.pipeline_spec_files
         files_subset = [
             f for f in files
@@ -557,7 +562,6 @@ class PachydermClient:
         ]
         files = files_subset if len(files_subset) > 0 else files
 
-        # Read pipeline specs from files
         pipeline_specs = []
         n = len(files)
         for file in files:
@@ -580,7 +584,6 @@ class PachydermClient:
                         raise ValueError(f"Item {i + 1} in file '{file}' does not look like a pipeline specification")
         self.logger.debug(f'Read pipeline specifications from {n} files')
 
-        # Filter pipelines
         if pipelines != '*':
             def wildcard_match_pipeline_spec(p):
                 try:
@@ -589,7 +592,6 @@ class PachydermClient:
                     return False
             pipeline_specs = [p for p in pipeline_specs if wildcard_match_pipeline_spec(p)]
 
-        # Transform pipeline specs to meet the Pachyderm specification format
         pipeline_specs = self._transform_pipeline_specs(pipeline_specs)
 
         if len(pipeline_specs) > 0:
@@ -714,7 +716,7 @@ class PachydermClient:
             pipeline_names = [pipeline_spec['pipeline']['name'] for pipeline_spec in pipeline_specs]
             deleted_pipelines = self.delete_pipelines(pipeline_names)
 
-        for pipeline_spec in pipeline_specs:
+        for pipeline_spec in self._progress(pipeline_specs, unit='pipeline'):
             pipeline = pipeline_spec['pipeline']['name']
             if self.build_images:
                 self._build_image(pipeline_spec)
