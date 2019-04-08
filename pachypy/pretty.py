@@ -146,13 +146,16 @@ class PrettyPachydermClient(PachydermClient):
             'pipeline': 'Pipeline',
             'state': 'State',
             'cron_spec': 'Cron',
+            'cron_prev_tick': 'Last Tick',
+            'cron_next_tick': 'Next Tick',
             'input': 'Input',
             'output_branch': 'Output',
             'datum_tries': 'Tries',
             'created': 'Created',
         }, axis=1, inplace=True)
         df.loc[df['jobs_running'] > 0, 'State'] = 'job running'
-        df.loc[df['Cron'] != '', 'Cron'] = _fa('stopwatch') + df['Cron']
+        now = datetime.now(self.user_timezone)
+        df['Next Tick In'] = (now - df['Next Tick'].dt.tz_localize(self.user_timezone)).dt.total_seconds() * -1
         df['Parallelism'] = ''
         df.loc[df['parallelism_constant'] > 0, 'Parallelism'] = \
             _fa('hashtag') + df['parallelism_constant'].astype(str)
@@ -161,9 +164,14 @@ class PrettyPachydermClient(PachydermClient):
         df['Jobs'] = \
             '<span style="color: green">' + df['jobs_success'].astype(str) + '</span>' + \
             np.where(df['jobs_failure'] > 0, ' + <span style="color: red">' + df['jobs_failure'].astype(str) + '</span>', '')
-        styler = df[['Pipeline', 'State', 'Cron', 'Input', 'Output', 'Tries', 'Parallelism', 'Jobs', 'Created']].style \
+        styler = df[['Pipeline', 'State', 'Cron', 'Next Tick In', 'Input', 'Output', 'Parallelism', 'Jobs', 'Created']].style \
             .apply(_style_pipeline_state, subset=['State']) \
-            .format({'State': _format_pipeline_state, 'Created': _format_datetime}) \
+            .format({
+                'State': _format_pipeline_state,
+                'Cron': _format_cron_spec,
+                'Next Tick In': _format_duration,
+                'Created': _format_datetime,
+            }) \
             .set_properties(subset=['Input'], **{'white-space': 'normal !important'}) \
             .set_table_styles(self.table_styles) \
             .hide_index()
@@ -343,6 +351,12 @@ def _style_job_progress(s: pd.Series) -> List[str]:
     return [css_bar(x) if not pd.isna(x) and x < 100 else '' for x in s]
 
 
+def _format_cron_spec(s: str) -> str:
+    if pd.isna(s) or s == '':
+        return ''
+    return _fa('stopwatch') + s
+
+
 def _format_file_type(s: str) -> str:
     return {
         'file': _fa('file') + s,
@@ -399,7 +413,7 @@ def _format_date(d: date) -> str:
     return word[td] if td in word else '{:%-d %b %Y}'.format(d)
 
 
-def _format_duration(secs: float) -> str:
+def _format_duration(secs: float, n: int = 2) -> str:
     if pd.isna(secs):
         return ''
     d = relativedelta(seconds=int(secs), microseconds=int((secs % 1) * 1e6))
@@ -413,17 +427,18 @@ def _format_duration(secs: float) -> str:
         'microseconds': 'ms'
     }
     ret = ''
+    i = 0
     for attr, attr_short in attrs.items():
-        n = getattr(d, attr, 0)
-        if n > 0:
-            n = getattr(d, attr)
+        x = getattr(d, attr, 0)
+        if x > 0:
             if attr == 'microseconds':
-                n /= 1000
+                x /= 1000
                 u = attr_short
             else:
-                u = n != 1 and attr_short or attr_short[:-1]
-            ret += f'{n:.0f} {u}, '
-            if attr in {'minutes', 'seconds'}:
+                u = x != 1 and attr_short or attr_short[:-1]
+            ret += f'{x:.0f} {u}, '
+            i += 1
+            if i >= n or attr in {'minutes', 'seconds'}:
                 break
     return ret.strip(', ')
 

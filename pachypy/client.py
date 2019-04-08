@@ -7,8 +7,9 @@ import json
 import logging
 import os
 import re
+import time
 from collections import namedtuple
-from datetime import datetime
+from datetime import datetime, timezone, tzinfo
 from fnmatch import fnmatch
 from glob import glob
 from pathlib import Path
@@ -16,7 +17,9 @@ from typing import List, Set, Dict, Iterable, Callable, IO, BinaryIO, Union, Opt
 
 import chardet
 import pandas as pd
+import pytz
 import yaml
+from croniter import croniter
 from docker import DockerClient
 from tzlocal import get_localzone
 
@@ -64,6 +67,8 @@ class PachydermClient:
         build_images: bool = True,
         pipeline_spec_files: FileGlob = None,
         pipeline_spec_transformer: Optional[Callable[[dict], dict]] = None,
+        pachd_timezone: Union[str, tzinfo] = 'utc',
+        user_timezone: Optional[Union[str, tzinfo]] = None
     ):
         self._pipeline_spec_files: FileGlob = None
         self._docker_client: Optional[DockerClient] = None
@@ -78,6 +83,8 @@ class PachydermClient:
         self.build_images = build_images
         self.pipeline_spec_files = pipeline_spec_files
         self.pipeline_spec_transformer = pipeline_spec_transformer
+        self.pachd_timezone = _resolve_pachd_timezone(pachd_timezone)
+        self.user_timezone = _resolve_user_timezone(user_timezone)
 
         self.logger.debug(f'Created client for Pachyderm cluster at {self.adapter.host}:{self.adapter.port}')
 
@@ -135,7 +142,7 @@ class PachydermClient:
         if repos is not None and repos != '*':
             df = df[df.repo.isin(set(_wildcard_filter(df.repo, repos)))]
         df['is_tick'] = df['repo'].str.endswith('_tick')
-        df['created'] = _tz_localize(df['created'])
+        df['created'] = self._timestamp_localize(df['created'])
         return df.set_index('repo')[['is_tick', 'branches', 'size_bytes', 'created']].sort_index()
 
     def list_commits(self, repos: WildcardFilter, n: int = 10) -> pd.DataFrame:
@@ -191,9 +198,11 @@ class PachydermClient:
         df = self.adapter.list_pipelines()
         if pipelines is not None and pipelines != '*':
             df = df[df.pipeline.isin(set(_wildcard_filter(df.pipeline, pipelines)))]
-        df['created'] = _tz_localize(df['created'])
+        df['created'] = self._timestamp_localize(df['created'])
+        df['cron_prev_tick'] = df['cron_spec'].apply(lambda cs: self._cron_tick_localize(cs, prev=True))
+        df['cron_next_tick'] = df['cron_spec'].apply(lambda cs: self._cron_tick_localize(cs, prev=False))
         return df.set_index('pipeline')[[
-            'state', 'cron_spec', 'input', 'input_repos', 'output_branch',
+            'state', 'cron_spec', 'cron_prev_tick', 'cron_next_tick', 'input', 'input_repos', 'output_branch',
             'parallelism_constant', 'parallelism_coefficient', 'datum_tries', 'max_queue_size',
             'jobs_running', 'jobs_success', 'jobs_failure', 'created'
         ]]
@@ -216,7 +225,7 @@ class PachydermClient:
         if hide_null_jobs:
             df = df[df['data_total'] > 0]
         for col in ['started', 'finished']:
-            df[col] = _tz_localize(df[col])
+            df[col] = self._timestamp_localize(df[col])
         df = df.reset_index().sort_values(['started', 'index'], ascending=[False, True]).head(n)
         df['duration'] = df['finished'] - df['started']
         df.loc[df['state'] == 'running', 'duration'] = datetime.now() - df['started']
@@ -260,7 +269,7 @@ class PachydermClient:
         if user_only:
             df = df[df['user']]
         df['message'] = df['message'].fillna('')
-        df['ts'] = _tz_localize(df['ts'])
+        df['ts'] = self._timestamp_localize(df['ts'])
         df['worker_ts_min'] = df.groupby(['job', 'worker'])['ts'].transform('min')
         if last_job_only:
             df['job_ts_min'] = df.groupby(['job'])['ts'].transform('min')
@@ -755,6 +764,17 @@ class PachydermClient:
     def _list_repo_names(self, match: WildcardFilter = None) -> List[str]:
         return _wildcard_filter(self.adapter.list_repo_names(), match)
 
+    def _cron_tick_localize(self, cron_spec: str, prev: bool = True) -> Optional[pd.Timestamp]:
+        if pd.isna(cron_spec) or cron_spec == '':
+            return None
+        now = datetime.now(self.pachd_timezone)
+        cron = croniter(cron_spec, now)
+        tick = cron.get_prev(datetime) if prev else cron.get_next(datetime)
+        return pd.Timestamp(tick.astimezone(self.user_timezone).replace(tzinfo=None))
+
+    def _timestamp_localize(self, ts: pd.Series) -> pd.Series:
+        return ts.dt.tz_localize('utc').dt.tz_convert(self.user_timezone).dt.tz_localize(None)
+
     @classmethod
     def _progress(cls, x, **kwargs):
         del kwargs
@@ -852,6 +872,29 @@ class PachydermCommit(PachydermCommitAdapter):
         return f"{self.__class__.__name__}('{self.commit or ''}')"
 
 
+def _resolve_user_timezone(tz: Optional[Union[tzinfo, str]]) -> tzinfo:
+    if not tz:
+        if 'TZ' in os.environ:
+            time.tzset()
+            tz = datetime.now(timezone.utc).astimezone().tzinfo
+            return tz or timezone.utc
+        else:
+            return get_localzone()  # type: ignore
+    elif isinstance(tz, str):
+        return pytz.timezone(tz)
+    else:
+        return tz
+
+
+def _resolve_pachd_timezone(tz: Optional[Union[tzinfo, str]]) -> tzinfo:
+    if not tz:
+        return timezone.utc
+    elif isinstance(tz, str):
+        return pytz.timezone(tz)
+    else:
+        return tz
+
+
 def _wildcard_filter(x: Iterable[str], pattern: WildcardFilter) -> List[str]:
     if pattern is None or pattern == '*':
         return list(x)
@@ -866,10 +909,6 @@ def _wildcard_match(x: str, pattern: WildcardFilter) -> bool:
         return fnmatch(x, pattern)
     else:
         return any([_wildcard_match(x, m) for m in pattern])
-
-
-def _tz_localize(s: pd.Series) -> pd.Series:
-    return s.dt.tz_localize('utc').dt.tz_convert(get_localzone().zone).dt.tz_localize(None)
 
 
 def _expand_files(files: FileGlob) -> List[str]:
