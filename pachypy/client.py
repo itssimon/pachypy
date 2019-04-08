@@ -180,7 +180,7 @@ class PachydermClient:
             ])
         if files_only:
             df = df[df['type'] == 'file']
-        return df.set_index(['repo', 'path'])[['type', 'size_bytes', 'commit', 'branches', 'committed']]
+        return df.set_index(['repo', 'path'])[['type', 'size_bytes', 'commit', 'branches', 'committed']].sort_index()
 
     def list_pipelines(self, pipelines: WildcardFilter = '*') -> pd.DataFrame:
         """Get list of pipelines as pandas DataFrame.
@@ -198,12 +198,13 @@ class PachydermClient:
             'jobs_running', 'jobs_success', 'jobs_failure', 'created'
         ]]
 
-    def list_jobs(self, pipelines: WildcardFilter = '*', n: int = 20) -> pd.DataFrame:
+    def list_jobs(self, pipelines: WildcardFilter = '*', n: int = 20, hide_null_jobs: bool = True) -> pd.DataFrame:
         """Get list of jobs as pandas DataFrame.
 
         Args:
             pipelines: Pattern to filter jobs by pipeline name. Supports shell-style wildcards.
             n: Maximum number of jobs returned.
+            hide_null_jobs: If true, empty jobs with no data to process will be filtered out.
         """
         if pipelines is not None and pipelines != '*':
             pipeline_names = self._list_pipeline_names(pipelines)
@@ -212,6 +213,8 @@ class PachydermClient:
             df = pd.concat([self.adapter.list_jobs(pipeline=pipeline, n=n) for pipeline in self._progress(pipeline_names, unit='pipeline')])
         else:
             df = self.adapter.list_jobs(n=n)
+        if hide_null_jobs:
+            df = df[df['data_total'] > 0]
         for col in ['started', 'finished']:
             df[col] = _tz_localize(df[col])
         df = df.reset_index().sort_values(['started', 'index'], ascending=[False, True]).head(n)
@@ -324,7 +327,7 @@ class PachydermClient:
         """
         return PachydermCommit(self, repo, branch=branch, parent_commit=parent_commit, flush=flush)
 
-    def put_timestamp_file(self, repo: str, branch: str = 'master', overwrite: bool = True, flush: bool = False) -> None:
+    def put_timestamp_file(self, repo: str, branch: str = 'master', overwrite: bool = False, flush: bool = False) -> None:
         """Put a timestamp file in a repository to simulate a cron tick.
 
         This can be used to trigger pipelines with a cron input.
@@ -332,18 +335,21 @@ class PachydermClient:
         Args:
             repo: Repository to put timestamp file in.
             branch: Branch in repository.
-            overwrite: Whether to overwrite an existing 'time' file (True),
-                or to add a new timestamp file (False).
+            overwrite: Whether to overwrite existing timestamp files (True) or
+                to just add a new timestamp file (False). Only applies to pachd >=1.8.6.
             flush: If true, blocks until all jobs triggered by this commit have finished.
         """
         with self.commit(repo, branch=branch, flush=flush) as c:
-            if overwrite:
-                c.delete_file('time')
-                timestamp = datetime.utcnow().isoformat()[:-3] + 'Z'
-                c.put_file_bytes(json.dumps(timestamp).encode('utf-8'), 'time')
-            else:
+            if self.pachd_version >= '1.8.6':
+                if overwrite:
+                    c.delete_files('/????-??-??T??:??:??*')
+                    c.delete_files('/time')
                 timestamp = datetime.utcnow().replace(microsecond=0).isoformat() + 'Z'
                 c.put_file_bytes(b'', timestamp)
+            else:
+                c.delete_file('/time')
+                timestamp = datetime.utcnow().isoformat()[:-3] + 'Z'
+                c.put_file_bytes(json.dumps(timestamp).encode('utf-8'), '/time')
 
     def delete_commit(self, repo: str, commit: str) -> None:
         """Deletes a commit.
@@ -448,7 +454,7 @@ class PachydermClient:
             self.get_file(repo, path=row['path'], commit=row['commit'], destination=local_path)
 
     def create_pipelines(self, pipelines: WildcardFilter = '*', pipeline_specs: Optional[List[dict]] = None,
-                         recreate: bool = False) -> PipelineChanges:
+                         recreate: bool = False, build_options: Optional[dict] = None) -> PipelineChanges:
         """Creates or recreates pipelines.
 
         Args:
@@ -461,10 +467,10 @@ class PachydermClient:
             Created and deleted pipeline names.
         """
         return self._create_or_update_pipelines(pipelines=pipelines, pipeline_specs=pipeline_specs,
-                                                update=False, recreate=recreate, reprocess=False)
+                                                update=False, recreate=recreate, reprocess=False, build_options=build_options)
 
     def update_pipelines(self, pipelines: WildcardFilter = '*', pipeline_specs: Optional[List[dict]] = None,
-                         recreate: bool = False, reprocess: bool = False) -> PipelineChanges:
+                         recreate: bool = False, reprocess: bool = False, build_options: Optional[dict] = None) -> PipelineChanges:
         """Updates or recreates pipelines.
 
         Non-existing pipelines will be created.
@@ -480,7 +486,7 @@ class PachydermClient:
             Updated, created and deleted pipeline names.
         """
         return self._create_or_update_pipelines(pipelines=pipelines, pipeline_specs=pipeline_specs,
-                                                update=True, recreate=recreate, reprocess=reprocess)
+                                                update=True, recreate=recreate, reprocess=reprocess, build_options=build_options)
 
     def delete_pipelines(self, pipelines: WildcardFilter) -> List[str]:
         """Deletes existing pipelines.
@@ -492,10 +498,10 @@ class PachydermClient:
             Names of deleted pipelines.
         """
         pipelines = self._list_pipeline_names(pipelines)
-        for pipeline in pipelines[::-1]:
+        for pipeline in pipelines:
             self.adapter.delete_pipeline(pipeline)
             self.logger.info(f'Deleted pipeline {pipeline}')
-        return pipelines[::-1]
+        return pipelines
 
     def start_pipelines(self, pipelines: WildcardFilter) -> List[str]:
         """Restarts stopped pipelines.
@@ -611,12 +617,13 @@ class PachydermClient:
         self._built_images = set()
         self._image_digests = {}
 
-    def _build_image(self, pipeline_spec: dict, push: bool = True) -> None:
+    def _build_image(self, pipeline_spec: dict, build_options: Optional[dict] = None, push: bool = True) -> None:
         image = pipeline_spec['transform']['image']
         if image in self._built_images:
             return
-        build_options = pipeline_spec['transform'].get('docker_build_options', {})
-        build_options = {**{'rm': True}, **build_options}
+        default_build_options = {'rm': True}
+        pipeline_build_options = pipeline_spec['transform'].get('docker_build_options', {})
+        build_options = {**default_build_options, **pipeline_build_options, **(build_options or {})}
         if 'dockerfile_path' in pipeline_spec['transform']:
             dockerfile_path = pipeline_spec['transform']['dockerfile_path']
             self.logger.info(f"Building Docker image '{image}' from '{dockerfile_path}' ...")
@@ -651,18 +658,13 @@ class PachydermClient:
         Args:
             pipeline_specs: Pipeline specifications to transform.
         """
-        previous_image = None
-        previous_file = None
         for pipeline in pipeline_specs:
             if callable(self.pipeline_spec_transformer):
                 pipeline = self.pipeline_spec_transformer(pipeline)
             if isinstance(pipeline['pipeline'], str):
                 pipeline['pipeline'] = {'name': pipeline['pipeline']}
             if 'image' not in pipeline['transform']:
-                if previous_image is not None and pipeline['_file'] == previous_file:
-                    pipeline['transform']['image'] = previous_image
-                else:
-                    raise ValueError(f"Pipeline '{pipeline['pipeline']['name']}' is missing the `transform.image` field")
+                raise ValueError(f"Pipeline '{pipeline['pipeline']['name']}' is missing the `transform.image` field")
             if 'dockerfile_path' in pipeline['transform']:
                 path = Path(pipeline['transform']['dockerfile_path'])
                 if not path.is_absolute():
@@ -670,8 +672,6 @@ class PachydermClient:
                 if not path.is_dir() and path.name.lower() == 'dockerfile':
                     path = path.parent
                 pipeline['transform']['dockerfile_path'] = path.resolve()
-            previous_image = pipeline['transform']['image']
-            previous_file = pipeline['_file']
         return pipeline_specs
 
     def _get_registry_adapter(self, image: str) -> DockerRegistryAdapter:
@@ -712,7 +712,8 @@ class PachydermClient:
         return image
 
     def _create_or_update_pipelines(self, pipelines: WildcardFilter = '*', pipeline_specs: List[dict] = None,
-                                    update: bool = True, recreate: bool = False, reprocess: bool = False) -> PipelineChanges:
+                                    update: bool = True, recreate: bool = False, reprocess: bool = False,
+                                    build_options: Optional[dict] = None) -> PipelineChanges:
         if pipeline_specs is None:
             pipeline_specs = self.read_pipeline_specs(pipelines)
         elif pipelines != '*':
@@ -731,7 +732,7 @@ class PachydermClient:
         for pipeline_spec in self._progress(pipeline_specs, unit='pipeline'):
             pipeline = pipeline_spec['pipeline']['name']
             if self.build_images:
-                self._build_image(pipeline_spec)
+                self._build_image(pipeline_spec, build_options=build_options)
             if self.add_image_digests:
                 pipeline_spec['transform']['image'] = self._add_image_digest(pipeline_spec['transform']['image'])
             if pipeline in existing_pipelines and not recreate:

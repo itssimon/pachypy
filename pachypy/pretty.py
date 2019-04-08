@@ -169,8 +169,8 @@ class PrettyPachydermClient(PachydermClient):
             .hide_index()
         return PrettyOutput(styler, df)
 
-    def list_jobs(self, pipelines: WildcardFilter = '*', n: int = 20) -> PrettyOutput:
-        df = super().list_jobs(pipelines=pipelines, n=n).reset_index()
+    def list_jobs(self, pipelines: WildcardFilter = '*', n: int = 20, hide_null_jobs: bool = True) -> PrettyOutput:
+        df = super().list_jobs(pipelines=pipelines, n=n, hide_null_jobs=hide_null_jobs).reset_index()
         df.rename({
             'job': 'Job',
             'pipeline': 'Pipeline',
