@@ -24,6 +24,8 @@ setup(
         'boto3>=1.9.119',
         'pandas>=0.24.2',
         'pyyaml>=3.13',
+        'croniter>=0.3.29',
+        'pytz>=2018.9',
         'tzlocal>=1.5.1',
         'termcolor>=1.1.0',
         'ipython>=7.4.0',
