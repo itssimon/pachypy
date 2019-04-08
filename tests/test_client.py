@@ -270,15 +270,6 @@ def test_commit_put_files(client: PachydermClient, **mocks):
 
 
 @patch_commit_adapter()
-def test_put_timestamp_file(client: PachydermClient, **mocks):
-    client.put_timestamp_file('test_repo', overwrite=True)
-    mocks['delete_file'].assert_called_once()
-    mocks['put_file_bytes'].assert_called_once()
-    assert json.loads(mocks['put_file_bytes'].call_args[0][0])
-    assert mocks['put_file_bytes'].call_args[0][1] == 'time'
-
-
-@patch_commit_adapter()
 @patch_adapter()
 def test_trigger_pipeline(client: PachydermClient, **mocks):
     mocks['get_pipeline_cron_specs'].return_value = []
@@ -287,16 +278,11 @@ def test_trigger_pipeline(client: PachydermClient, **mocks):
 
     mocks['get_pipeline_cron_specs'].return_value = [{'repo': 'pipeline_tick', 'overwrite': True}]
     client.trigger_pipeline('pipeline')
-    mocks['delete_file'].assert_called_once()
-    mocks['delete_file'].reset_mock()
     mocks['put_file_bytes'].assert_called_once()
-
-    mocks['delete_file'].reset_mock()
     mocks['put_file_bytes'].reset_mock()
 
     mocks['get_pipeline_cron_specs'].return_value = [{'repo': 'pipeline_tick', 'overwrite': False}]
     client.trigger_pipeline('pipeline')
-    assert not mocks['delete_file'].called
     mocks['put_file_bytes'].assert_called_once()
 
 
@@ -351,7 +337,6 @@ def test_read_pipeline_specs(client: PachydermClient, pipeline_spec_files_path):
     pipeline_specs = client.read_pipeline_specs('test_a*')
     assert isinstance(pipeline_specs, list) and len(pipeline_specs) == 2
     assert pipeline_specs[0]['pipeline']['name'] == 'test_a_pipeline_1'
-    assert pipeline_specs[0]['transform']['image'] == pipeline_specs[1]['transform']['image']
     assert pipeline_specs[0]['test'] is True
 
     client.pipeline_spec_files = os.path.join(pipeline_spec_files_path, 'test_c.json')  # type: ignore
@@ -386,8 +371,8 @@ def test_create_update_delete_pipelines(client: PachydermClient, **mocks):
     with patch(list_pipeline_names, MagicMock(return_value=pipelines)):
         assert client.create_pipelines('test_a*') == ([], [], [])
         assert client.update_pipelines('test_a*') == ([], pipelines, [])
-        assert client.update_pipelines('test_a*', recreate=True) == (pipelines, [], pipelines[::-1])
-        assert client.delete_pipelines('test_a*') == pipelines[::-1]
+        assert client.update_pipelines('test_a*', recreate=True) == (pipelines, [], pipelines)
+        assert client.delete_pipelines('test_a*') == pipelines
 
 
 @patch_adapter()

@@ -73,6 +73,8 @@ def test_format_duration():
     assert _format_duration(7260) == '2 hours, 1 min'
     assert _format_duration(7320) == '2 hours, 2 mins'
     assert _format_duration(7322) == '2 hours, 2 mins'
+    assert _format_duration(86400) == '1 day'
+    assert _format_duration(90000) == '1 day, 1 hour'
 
 
 def test_format_size():
