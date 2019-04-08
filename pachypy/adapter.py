@@ -558,7 +558,7 @@ class PachydermCommitAdapter:
         file = File(commit=self._commit, path=path)
 
         def _blocks(v):
-            for i in range(0, len(v), self._buffer_size):
+            for i in range(0, len(v) + 1, self._buffer_size):
                 yield PutFileRequest(file=file, value=v[i:i + self._buffer_size], delimiter=delimiter,
                                      target_file_datums=target_file_datums, target_file_bytes=target_file_bytes)
 
