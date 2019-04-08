@@ -35,12 +35,3 @@
     pfs:
       repo: example_pipeline_1
       glob: "*"
-
-- pipeline: example_pipeline_3
-  transform:
-    # You can omit the image field if it the same as a pipeline defined above
-    cmd: ["/bin/sh", "-c", "cat /pfs/example_pipeline_2/*"]
-  input:
-    pfs:
-      repo: example_pipeline_2
-      glob: "*"
