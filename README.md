@@ -24,6 +24,8 @@ pachypy uses the protobufs from the official [python_pachyderm](https://github.c
 
 *Requires Python 3.5 or higher*
 
+![alt text](https://raw.githubusercontent.com/itssimon/pachypy/master/examples/list_jobs_screenshot.png)
+
 ## Installation
 
 ```bash
