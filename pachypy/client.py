@@ -654,6 +654,8 @@ class PachydermClient:
         previous_image = None
         previous_file = None
         for pipeline in pipeline_specs:
+            if callable(self.pipeline_spec_transformer):
+                pipeline = self.pipeline_spec_transformer(pipeline)
             if isinstance(pipeline['pipeline'], str):
                 pipeline['pipeline'] = {'name': pipeline['pipeline']}
             if 'image' not in pipeline['transform']:
@@ -668,8 +670,6 @@ class PachydermClient:
                 if not path.is_dir() and path.name.lower() == 'dockerfile':
                     path = path.parent
                 pipeline['transform']['dockerfile_path'] = path.resolve()
-            if callable(self.pipeline_spec_transformer):
-                pipeline = self.pipeline_spec_transformer(pipeline)
             previous_image = pipeline['transform']['image']
             previous_file = pipeline['_file']
         return pipeline_specs
