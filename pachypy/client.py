@@ -143,7 +143,10 @@ class PachydermClient:
             df = df[df.repo.isin(set(_wildcard_filter(df.repo, repos)))]
         df['is_tick'] = df['repo'].str.endswith('_tick')
         df['created'] = self._timestamp_localize(df['created'])
-        return df.set_index('repo')[['is_tick', 'branches', 'size_bytes', 'created']].sort_index()
+        df = df.sort_values(['repo']).reset_index(drop=True)
+        return df[['repo', 'is_tick', 'branches', 'size_bytes', 'created']].astype({
+            'is_tick': 'bool',
+        })
 
     def list_commits(self, repos: WildcardFilter, n: int = 10) -> pd.DataFrame:
         """Get list of commits as pandas DataFrame.
@@ -156,7 +159,10 @@ class PachydermClient:
         if len(repo_names) == 0:
             raise PachydermClientError(f'No repos matching "{repos}" were found.')
         df = pd.concat([self.adapter.list_commits(repo=repo, n=n) for repo in self._progress(repo_names, unit='repo')])
-        return df.set_index(['repo', 'commit'])[['branches', 'size_bytes', 'started', 'finished', 'parent_commit']]
+        for col in ('started', 'finished'):
+            df[col] = self._timestamp_localize(df[col])
+        df = df.sort_values(['repo', 'started'], ascending=[True, False]).reset_index(drop=True)
+        return df[['repo', 'commit', 'branches', 'size_bytes', 'started', 'finished', 'parent_commit']]
 
     def list_files(self, repos: WildcardFilter, branch: Optional[str] = 'master', commit: Optional[str] = None,
                    glob: str = '**', files_only: bool = True) -> pd.DataFrame:
@@ -187,7 +193,9 @@ class PachydermClient:
             ])
         if files_only:
             df = df[df['type'] == 'file']
-        return df.set_index(['repo', 'path'])[['type', 'size_bytes', 'commit', 'branches', 'committed']].sort_index()
+        df['committed'] = self._timestamp_localize(df['committed'])
+        df = df.sort_values(['repo', 'path']).reset_index(drop=True)
+        return df[['repo', 'path', 'type', 'size_bytes', 'commit', 'branches', 'committed']]
 
     def list_pipelines(self, pipelines: WildcardFilter = '*') -> pd.DataFrame:
         """Get list of pipelines as pandas DataFrame.
@@ -201,11 +209,15 @@ class PachydermClient:
         df['created'] = self._timestamp_localize(df['created'])
         df['cron_prev_tick'] = df['cron_spec'].apply(lambda cs: self._cron_tick_localize(cs, prev=True))
         df['cron_next_tick'] = df['cron_spec'].apply(lambda cs: self._cron_tick_localize(cs, prev=False))
-        return df.set_index('pipeline')[[
-            'state', 'cron_spec', 'cron_prev_tick', 'cron_next_tick', 'input', 'input_repos', 'output_branch',
+        df = df.sort_values(['pipeline']).reset_index(drop=True)
+        return df[[
+            'pipeline', 'state', 'cron_spec', 'cron_prev_tick', 'cron_next_tick', 'input', 'input_repos', 'output_branch',
             'parallelism_constant', 'parallelism_coefficient', 'datum_tries', 'max_queue_size',
             'jobs_running', 'jobs_success', 'jobs_failure', 'created'
-        ]]
+        ]].astype({
+            'cron_prev_tick': 'datetime64[ns]',
+            'cron_next_tick': 'datetime64[ns]',
+        })
 
     def list_jobs(self, pipelines: WildcardFilter = '*', n: int = 20, hide_null_jobs: bool = True) -> pd.DataFrame:
         """Get list of jobs as pandas DataFrame.
@@ -224,14 +236,14 @@ class PachydermClient:
             df = self.adapter.list_jobs(n=n)
         if hide_null_jobs:
             df = df[df['data_total'] > 0]
-        for col in ['started', 'finished']:
+        for col in ('started', 'finished'):
             df[col] = self._timestamp_localize(df[col])
-        df = df.reset_index().sort_values(['started', 'index'], ascending=[False, True]).head(n)
+        df = df.reset_index().sort_values(['started', 'index'], ascending=[False, True]).head(n).reset_index(drop=True)
         df['duration'] = df['finished'] - df['started']
         df.loc[df['state'] == 'running', 'duration'] = datetime.now() - df['started']
         df['progress'] = (df['data_processed'] + df['data_skipped']) / df['data_total']
-        return df.set_index('job')[[
-            'pipeline', 'state', 'started', 'finished', 'duration',
+        return df[[
+            'job', 'pipeline', 'state', 'started', 'finished', 'duration',
             'data_processed', 'data_skipped', 'data_total', 'progress', 'restart',
             'download_time', 'process_time', 'upload_time',
             'download_bytes', 'upload_bytes', 'output_commit',
@@ -244,7 +256,12 @@ class PachydermClient:
             job: Job ID to return datums for.
         """
         df = self.adapter.list_datums(job)
-        return df.set_index('datum')[['job', 'state', 'repo', 'path', 'type', 'size_bytes', 'commit', 'committed']].sort_index()
+        df['committed'] = self._timestamp_localize(df['committed'])
+        df = df.sort_values(['datum']).reset_index(drop=True)
+        return df[[
+            'datum', 'job', 'state', 'repo', 'path', 'type', 'size_bytes',
+            'commit', 'committed'
+        ]]
 
     def get_logs(self, pipelines: WildcardFilter = '*', datum: Optional[str] = None,
                  last_job_only: bool = True, user_only: bool = False, master: bool = False) -> pd.DataFrame:
@@ -271,12 +288,12 @@ class PachydermClient:
         df['message'] = df['message'].fillna('')
         df['ts'] = self._timestamp_localize(df['ts'])
         df['worker_ts_min'] = df.groupby(['job', 'worker'])['ts'].transform('min')
-        if last_job_only:
+        if last_job_only and len(df) > 0:
             df['job_ts_min'] = df.groupby(['job'])['ts'].transform('min')
             df['job_rank'] = df.groupby(['pipeline'])['job_ts_min'].transform(lambda x: x.rank(method='dense', ascending=False))
             df = df[df['job_rank'] == 1]
-        df = df.sort_values(['worker_ts_min', 'job', 'worker', 'ts', 'index'], ascending=True)
-        return df[['ts', 'job', 'pipeline', 'worker', 'datum', 'message', 'user']].reset_index(drop=True)
+        df = df.sort_values(['worker_ts_min', 'job', 'worker', 'ts', 'index'], ascending=True).reset_index(drop=True)
+        return df[['ts', 'job', 'pipeline', 'worker', 'datum', 'message', 'user']]
 
     def create_repos(self, repos: Union[str, Iterable[str]]) -> List[str]:
         """Create one or multiple new repositories in pfs.
@@ -728,11 +745,11 @@ class PachydermClient:
         elif pipelines != '*':
             pipeline_specs = [p for p in pipeline_specs if _wildcard_match(p['pipeline']['name'], pipelines)]
 
+        self.clear_cache()
         existing_pipelines = set(self._list_pipeline_names())
         created_pipelines: List[str] = []
         updated_pipelines: List[str] = []
         deleted_pipelines: List[str] = []
-        self._built_images = set()
 
         if recreate:
             pipeline_names = [pipeline_spec['pipeline']['name'] for pipeline_spec in pipeline_specs]
