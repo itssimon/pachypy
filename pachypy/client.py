@@ -13,7 +13,7 @@ from datetime import datetime, timezone, tzinfo
 from fnmatch import fnmatch
 from glob import glob
 from pathlib import Path
-from typing import List, Set, Dict, Iterable, Callable, IO, BinaryIO, Union, Optional
+from typing import List, Set, Dict, Iterable, Callable, IO, BinaryIO, Union, Optional, Any
 
 import chardet
 import pandas as pd
@@ -240,7 +240,8 @@ class PachydermClient:
             df[col] = self._timestamp_localize(df[col])
         df = df.reset_index().sort_values(['started', 'index'], ascending=[False, True]).head(n).reset_index(drop=True)
         df['duration'] = df['finished'] - df['started']
-        df.loc[df['state'] == 'running', 'duration'] = datetime.now() - df['started']
+        now = pd.Timestamp('now', tz=self.user_timezone).tz_localize(None)
+        df.loc[df['state'] == 'running', 'duration'] = now - df['started']
         df['progress'] = (df['data_processed'] + df['data_skipped']) / df['data_total']
         return df[[
             'job', 'pipeline', 'state', 'started', 'finished', 'duration',
@@ -294,6 +295,34 @@ class PachydermClient:
             df = df[df['job_rank'] == 1]
         df = df.sort_values(['worker_ts_min', 'job', 'worker', 'ts', 'index'], ascending=True).reset_index(drop=True)
         return df[['ts', 'job', 'pipeline', 'worker', 'datum', 'message', 'user']]
+
+    def inspect_pipeline(self, pipeline: str) -> Dict[str, Any]:
+        """Returns info about a pipeline.
+
+        Args:
+            pipeline: Name of pipeline to get info for.
+        """
+        return self.adapter.inspect_pipeline(pipeline=pipeline)
+
+    def inspect_job(self, job: str) -> Dict[str, Any]:
+        """Returns info about a job.
+
+        Args:
+            job: ID of job to get info for.
+        """
+        return self.adapter.inspect_job(job=job)
+
+    def inspect_datum(self, job: str, datum: str) -> Dict[str, Any]:
+        """Returns info about a datum.
+
+        Only works if stats tracking is enabled for the pipeline (enable_stats)
+        and raises a PachydermError otherwise.
+
+        Args:
+            job: ID of job the datum belongs to.
+            datum: ID of datum to get info for.
+        """
+        return self.adapter.inspect_datum(job=job, datum=datum)
 
     def create_repos(self, repos: Union[str, Iterable[str]]) -> List[str]:
         """Create one or multiple new repositories in pfs.
@@ -352,30 +381,6 @@ class PachydermClient:
             Commit object allowing operations inside the commit.
         """
         return PachydermCommit(self, repo, branch=branch, parent_commit=parent_commit, flush=flush)
-
-    def put_timestamp_file(self, repo: str, branch: str = 'master', overwrite: bool = False, flush: bool = False) -> None:
-        """Put a timestamp file in a repository to simulate a cron tick.
-
-        This can be used to trigger pipelines with a cron input.
-
-        Args:
-            repo: Repository to put timestamp file in.
-            branch: Branch in repository.
-            overwrite: Whether to overwrite existing timestamp files (True) or
-                to just add a new timestamp file (False). Only applies to pachd >=1.8.6.
-            flush: If true, blocks until all jobs triggered by this commit have finished.
-        """
-        with self.commit(repo, branch=branch, flush=flush) as c:
-            if self.pachd_version >= '1.8.6':
-                if overwrite:
-                    c.delete_files('/????-??-??T??:??:??*')
-                    c.delete_files('/time')
-                timestamp = datetime.utcnow().replace(microsecond=0).isoformat() + 'Z'
-                c.put_file_bytes(b'', timestamp)
-            else:
-                c.delete_file('/time')
-                timestamp = datetime.utcnow().isoformat()[:-3] + 'Z'
-                c.put_file_bytes(json.dumps(timestamp).encode('utf-8'), '/time')
 
     def delete_commit(self, repo: str, commit: str) -> None:
         """Deletes a commit.
@@ -562,8 +567,6 @@ class PachydermClient:
     def trigger_pipeline(self, pipeline: str, flush: bool = False) -> None:
         """Triggers a pipeline with a cron input by committing a timestamp file into its cron input repository.
 
-        This simply calls :meth:`~pachypy.client.PachydermClient.put_timestamp_file`.
-
         Args:
             pipeline: Name of pipeline to trigger.
             flush: If true, blocks until all triggered jobs have finished.
@@ -571,7 +574,8 @@ class PachydermClient:
         cron_specs = self.adapter.get_pipeline_cron_specs(pipeline)
         if len(cron_specs) == 0:
             raise PachydermClientError(f'Cannot trigger pipeline {pipeline} without cron input')
-        self.put_timestamp_file(cron_specs[0]['repo'], overwrite=cron_specs[0]['overwrite'], flush=flush)
+        with self.commit(repo=cron_specs[0]['repo'], flush=flush) as c:
+            c.put_timestamp_file(overwrite=cron_specs[0]['overwrite'])
 
     def delete_job(self, job: str) -> None:
         """Deletes a job.
@@ -867,6 +871,24 @@ class PachydermCommit(PachydermCommitAdapter):
                 raise ValueError(f"'{file_path}' is not a valid path in PFS. You may want to adjust the `base_path` argument.")
             self.put_file(file, file_path)
         return files
+
+    def put_timestamp_file(self, overwrite: bool = False) -> None:
+        """Uploads a timestamp file to simulate a cron tick.
+
+        Args:
+            overwrite: Whether to overwrite existing timestamp files (True) or
+                to just add a new timestamp file (False). Only applies to pachd >=1.8.6.
+        """
+        if self.client.pachd_version >= '1.8.6':
+            if overwrite:
+                self.delete_file('/time')
+                self.delete_files('/????-??-??T??:??:??*')
+            timestamp = datetime.utcnow().replace(microsecond=0).isoformat() + 'Z'
+            self.put_file_bytes(b'', timestamp)
+        else:
+            self.delete_file('/time')
+            timestamp = datetime.utcnow().isoformat()[:-3] + 'Z'
+            self.put_file_bytes(json.dumps(timestamp).encode('utf-8'), '/time')
 
     def delete_files(self, glob: str) -> List[str]:
         """Deletes all files matching `glob` in the current commit.

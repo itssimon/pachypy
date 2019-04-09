@@ -5,6 +5,7 @@ from typing import List, Dict, Generator, Union, Optional, TypeVar, Any, cast
 
 import grpc
 import pandas as pd
+from google.protobuf.json_format import MessageToJson
 from google.protobuf.timestamp_pb2 import Timestamp
 from python_pachyderm.client.pfs.pfs_pb2 import (
     Repo, Commit, Branch, File,
@@ -18,11 +19,12 @@ from python_pachyderm.client.pfs.pfs_pb2 import (
 )
 from python_pachyderm.client.pfs.pfs_pb2_grpc import APIStub as PfsAPIStub
 from python_pachyderm.client.pps.pps_pb2 import (
-    Pipeline, Job, Input, Transform,
+    Pipeline, Job, Input, Transform, Datum,
     ListPipelineRequest, ListJobRequest, ListDatumRequest, GetLogsRequest, DeleteJobRequest,
-    CreatePipelineRequest, DeletePipelineRequest, StartPipelineRequest, StopPipelineRequest, InspectPipelineRequest,
+    CreatePipelineRequest, DeletePipelineRequest, StartPipelineRequest, StopPipelineRequest,
+    InspectPipelineRequest, InspectJobRequest, InspectDatumRequest,
     FAILED as DATUM_FAILED, SUCCESS as DATUM_SUCCESS, SKIPPED as DATUM_SKIPPED, STARTING as DATUM_STARTING,
-    JOB_STARTING, JOB_RUNNING, JOB_FAILURE, JOB_SUCCESS, JOB_KILLED,
+    JOB_STARTING, JOB_RUNNING, JOB_FAILURE, JOB_SUCCESS, JOB_KILLED, JOB_MERGING,
     PIPELINE_STARTING, PIPELINE_RUNNING, PIPELINE_RESTARTING, PIPELINE_FAILURE, PIPELINE_PAUSED, PIPELINE_STANDBY,
 )
 from python_pachyderm.client.pps.pps_pb2_grpc import APIStub as PpsAPIStub
@@ -31,6 +33,36 @@ from python_pachyderm.client.version.versionpb.version_pb2_grpc import APIStub a
 
 
 T = TypeVar('T')
+
+pipeline_state_mapping = {
+    PIPELINE_STARTING: 'starting',
+    PIPELINE_RUNNING: 'running',
+    PIPELINE_RESTARTING: 'restarting',
+    PIPELINE_FAILURE: 'failure',
+    PIPELINE_PAUSED: 'paused',
+    PIPELINE_STANDBY: 'standby',
+    'PIPELINE_STARTING': 'starting',
+    'PIPELINE_RUNNING': 'running',
+    'PIPELINE_RESTARTING': 'restarting',
+    'PIPELINE_FAILURE': 'failure',
+    'PIPELINE_PAUSED': 'paused',
+    'PIPELINE_STANDBY': 'standby',
+}
+
+job_state_mapping = {
+    JOB_STARTING: 'starting',
+    JOB_RUNNING: 'running',
+    JOB_MERGING: 'merging',
+    JOB_FAILURE: 'failure',
+    JOB_SUCCESS: 'success',
+    JOB_KILLED: 'killed',
+    'JOB_STARTING': 'starting',
+    'JOB_RUNNING': 'running',
+    'JOB_MERGING': 'merging',
+    'JOB_FAILURE': 'failure',
+    'JOB_SUCCESS': 'success',
+    'JOB_KILLED': 'killed',
+}
 
 
 class PachydermError(Exception):
@@ -51,7 +83,7 @@ def retry(f: T) -> T:
         try:
             return f(self, *args, **kwargs)
         except grpc._channel._Rendezvous as e:
-            if e.code().value[1] == 'unavailable' and adapter._retries < adapter.max_retries:
+            if e.code().value[1] == 'unavailable' and adapter._retries < adapter._max_retries:
                 if adapter.check_connectivity():
                     adapter._retries += 1
                     return retry_wrapper(self, *args, **kwargs)
@@ -196,15 +228,6 @@ class PachydermAdapter:
 
     @retry
     def list_pipelines(self) -> pd.DataFrame:
-        state_mapping = {
-            PIPELINE_STARTING: 'starting',
-            PIPELINE_RUNNING: 'running',
-            PIPELINE_RESTARTING: 'restarting',
-            PIPELINE_FAILURE: 'failure',
-            PIPELINE_PAUSED: 'paused',
-            PIPELINE_STANDBY: 'standby',
-        }
-
         def input_string(i: Input) -> str:
             if i.cross:
                 return '(' + ' ⨯ '.join([input_string(j) for j in i.cross]) + ')'
@@ -251,7 +274,7 @@ class PachydermAdapter:
                 'jobs_success': pipeline.job_counts[JOB_SUCCESS],
                 'jobs_failure': pipeline.job_counts[JOB_FAILURE],
                 'created': _to_timestamp(pipeline.created_at.seconds, pipeline.created_at.nanos),
-                'state': state_mapping.get(pipeline.state, 'unknown'),
+                'state': pipeline_state_mapping.get(pipeline.state, 'unknown'),
             })
         return pd.DataFrame(res, columns=[
             'pipeline', 'state', 'image', 'cron_spec', 'input', 'input_repos', 'output_branch',
@@ -274,13 +297,6 @@ class PachydermAdapter:
 
     @retry
     def list_jobs(self, pipeline: Optional[str] = None, n: int = 20) -> pd.DataFrame:
-        state_mapping = {
-            JOB_STARTING: 'starting',
-            JOB_RUNNING: 'running',
-            JOB_FAILURE: 'failure',
-            JOB_SUCCESS: 'success',
-            JOB_KILLED: 'killed',
-        }
         i = 1
         res = []
         jobs_stream = self.pps_stub.ListJobStream(ListJobRequest(pipeline=Pipeline(name=pipeline)))
@@ -288,7 +304,7 @@ class PachydermAdapter:
             res.append({
                 'job': job.job.id,
                 'pipeline': job.pipeline.name,
-                'state': state_mapping.get(job.state, 'unknown'),
+                'state': job_state_mapping.get(job.state, 'unknown'),
                 'started': _to_timestamp(job.started.seconds, job.started.nanos),
                 'finished': _to_timestamp(job.finished.seconds, job.finished.nanos),
                 'restart': job.restart,
@@ -383,6 +399,45 @@ class PachydermAdapter:
             'ts': 'datetime64[ns]',
             'user': 'bool',
         })
+
+    @retry
+    def inspect_pipeline(self, pipeline: str) -> Dict[str, Any]:
+        res = self.pps_stub.InspectPipeline(InspectPipelineRequest(pipeline=Pipeline(name=pipeline)))
+        info = dict(json.loads(MessageToJson(res)))
+        for k in ['version', 'maxQueueSize', 'datumTries']:
+            if k in info:
+                info[k] = int(info[k])
+        for k in ['createdAt']:
+            if k in info:
+                info[k] = pd.to_datetime(info[k]).to_pydatetime(warn=False)
+        info['state'] = pipeline_state_mapping[info['state']]
+        if 'jobCounts' in info:
+            info['jobCounts'] = {job_state_mapping[int(k)]: v for k, v in info['jobCounts'].items()}
+        if 'lastJobState' in info:
+            info['lastJobState'] = job_state_mapping[info['lastJobState']]
+        return info
+
+    @retry
+    def inspect_job(self, job: str) -> Dict[str, Any]:
+        res = self.pps_stub.InspectJob(InspectJobRequest(job=Job(id=job)))
+        info = dict(json.loads(MessageToJson(res)))
+        for k in ['pipelineVersion', 'dataProcessed', 'dataSkipped', 'dataTotal', 'datumTries']:
+            if k in info:
+                info[k] = int(info[k])
+        for k in ['started', 'finished']:
+            if k in info:
+                info[k] = pd.to_datetime(info[k]).to_pydatetime(warn=False)
+        info['state'] = job_state_mapping[info['state']]
+        if 'stats' in info:
+            for k in ['downloadTime', 'processTime', 'uploadTime']:
+                if k in info['stats']:
+                    info['stats'][k] = float(info['stats'][k][:-1])
+        return info
+
+    @retry
+    def inspect_datum(self, job: str, datum: str) -> Dict[str, Any]:
+        res = self.pps_stub.InspectDatum(InspectDatumRequest(datum=Datum(id=datum, job=Job(id=job))))
+        return dict(json.loads(MessageToJson(res)))
 
     @retry
     def create_pipeline(self, pipeline_spec: dict) -> None:
