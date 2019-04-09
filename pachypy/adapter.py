@@ -5,6 +5,7 @@ from typing import List, Dict, Generator, Union, Optional, TypeVar, Any, cast
 
 import grpc
 import pandas as pd
+from google.protobuf.timestamp_pb2 import Timestamp
 from python_pachyderm.client.pfs.pfs_pb2 import (
     Repo, Commit, Branch, File,
     ListRepoRequest, ListCommitRequest, ListBranchRequest, GlobFileRequest, GetFileRequest,
@@ -389,6 +390,7 @@ class PachydermAdapter:
         transform_fields = {f.name for f in Transform.DESCRIPTOR.fields}
         pipeline_spec = {k: v for k, v in pipeline_spec.items() if k in fields}
         pipeline_spec['transform'] = {k: v for k, v in pipeline_spec['transform'].items() if k in transform_fields}
+        pipeline_spec['input'] = _transform_cron_start(pipeline_spec['input'])
         self.pps_stub.CreatePipeline(CreatePipelineRequest(**pipeline_spec))
 
     def update_pipeline(self, pipeline_spec: dict, reprocess: bool = False) -> None:
@@ -638,3 +640,18 @@ def _to_timestamp(seconds: int, nanos: int) -> Optional[pd.Timestamp]:
 
 def _to_timedelta(seconds: int, nanos: int) -> pd.Timedelta:
     return pd.Timedelta(float(f'{seconds}.{nanos}'), unit='s')
+
+
+def _transform_cron_start(i: dict) -> dict:
+    for k, v in i.items():
+        if k == 'cron' and 'start' in v:
+            dt = pd.to_datetime(v['start'])
+            if dt.tzinfo:
+                dt = dt.tz_convert('utc').tz_localize(None)
+            ts = Timestamp()
+            ts.FromDatetime(dt.to_pydatetime())
+            v['start'] = ts
+        elif k in ('cross', 'union'):
+            for j in v:
+                j = _transform_cron_start(j)
+    return i
