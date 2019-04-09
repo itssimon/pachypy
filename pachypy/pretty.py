@@ -10,6 +10,7 @@ from dateutil.relativedelta import relativedelta
 import pandas.io.formats.style as style
 import pandas as pd
 import numpy as np
+import yaml
 from IPython.core.display import HTML
 from termcolor import cprint
 from tqdm import tqdm_notebook
@@ -21,6 +22,12 @@ FONT_AWESOME_CSS_URL = 'https://use.fontawesome.com/releases/v5.8.1/css/all.css'
 CLIPBOARD_JS_URL = 'https://cdnjs.cloudflare.com/ajax/libs/clipboard.js/2.0.4/clipboard.js'
 BAR_COLOR = '#105ecd33'
 PROGRESS_BAR_COLOR = '#03820333'
+
+yaml.add_representer(
+    dict,
+    lambda self,
+    data: yaml.representer.SafeRepresenter.represent_dict(self, data.items())  # type: ignore
+)
 
 
 class CPrintHandler(logging.StreamHandler):
@@ -269,6 +276,18 @@ class PrettyPachydermClient(PachydermClient):
             cprint(f'[{row.ts}] {message}', color)
             job = row.job
             worker = row.worker
+
+    def inspect_pipeline(self, pipeline: str):
+        info = super().inspect_pipeline(pipeline)
+        print(yaml.dump(info))
+
+    def inspect_job(self, job: str):
+        info = super().inspect_job(job)
+        print(yaml.dump(info))
+
+    def inspect_datum(self, job: str, datum: str):
+        info = super().inspect_datum(job, datum)
+        print(yaml.dump(info))
 
     @classmethod
     def _progress(cls, x, **kwargs):
