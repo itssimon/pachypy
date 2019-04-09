@@ -68,7 +68,8 @@ class PrettyPachydermClient(PachydermClient):
         return self._logger
 
     def list_repos(self, repos: WildcardFilter = '*') -> PrettyOutput:
-        df = super().list_repos(repos=repos).reset_index()
+        df = super().list_repos(repos=repos)
+        dfr = df.copy()
         df.rename({
             'repo': 'Repo',
             'is_tick': 'Tick',
@@ -84,10 +85,11 @@ class PrettyPachydermClient(PachydermClient):
             .set_properties(subset=['Branches'], **{'white-space': 'normal !important'}) \
             .set_table_styles(self.table_styles) \
             .hide_index()
-        return PrettyOutput(styler, df)
+        return PrettyOutput(styler, dfr)
 
     def list_commits(self, repos: WildcardFilter, n: int = 10) -> PrettyOutput:
-        df = super().list_commits(repos=repos, n=n).reset_index()
+        df = super().list_commits(repos=repos, n=n)
+        dfr = df.copy()
         df.rename({
             'repo': 'Repo',
             'commit': 'Commit',
@@ -109,11 +111,12 @@ class PrettyPachydermClient(PachydermClient):
             }) \
             .set_table_styles(self.table_styles) \
             .hide_index()
-        return PrettyOutput(styler, df)
+        return PrettyOutput(styler, dfr)
 
     def list_files(self, repos: WildcardFilter, branch: Optional[str] = 'master', commit: Optional[str] = None,
                    glob: str = '**', files_only: bool = True) -> PrettyOutput:
-        df = super().list_files(repos=repos, branch=branch, commit=commit, glob=glob, files_only=files_only).reset_index()
+        df = super().list_files(repos=repos, branch=branch, commit=commit, glob=glob, files_only=files_only)
+        dfr = df.copy()
         df.rename({
             'repo': 'Repo',
             'type': 'Type',
@@ -135,12 +138,12 @@ class PrettyPachydermClient(PachydermClient):
             .set_properties(subset=['Path'], **{'white-space': 'normal !important'}) \
             .set_table_styles(self.table_styles) \
             .hide_index()
-        return PrettyOutput(styler, df)
+        return PrettyOutput(styler, dfr)
 
     def list_pipelines(self, pipelines: WildcardFilter = '*') -> PrettyOutput:
         df = super().list_pipelines(pipelines=pipelines)
+        dfr = df.copy()
         df['sort_key'] = df.index.map(_pipeline_sort_key(df['input_repos'].to_dict()))
-        df.reset_index(inplace=True)
         df.sort_values('sort_key', inplace=True)
         df.rename({
             'pipeline': 'Pipeline',
@@ -175,10 +178,11 @@ class PrettyPachydermClient(PachydermClient):
             .set_properties(subset=['Input'], **{'white-space': 'normal !important'}) \
             .set_table_styles(self.table_styles) \
             .hide_index()
-        return PrettyOutput(styler, df)
+        return PrettyOutput(styler, dfr)
 
     def list_jobs(self, pipelines: WildcardFilter = '*', n: int = 20, hide_null_jobs: bool = True) -> PrettyOutput:
-        df = super().list_jobs(pipelines=pipelines, n=n, hide_null_jobs=hide_null_jobs).reset_index()
+        df = super().list_jobs(pipelines=pipelines, n=n, hide_null_jobs=hide_null_jobs)
+        dfr = df.copy()
         df.rename({
             'job': 'Job',
             'pipeline': 'Pipeline',
@@ -212,10 +216,11 @@ class PrettyPachydermClient(PachydermClient):
             }) \
             .set_table_styles(self.table_styles) \
             .hide_index()
-        return PrettyOutput(styler, df)
+        return PrettyOutput(styler, dfr)
 
     def list_datums(self, job: str) -> PrettyOutput:
-        df = super().list_datums(job=job).reset_index()
+        df = super().list_datums(job=job)
+        dfr = df.copy()
         df.rename({
             'job': 'Job',
             'datum': 'Datum',
@@ -242,7 +247,7 @@ class PrettyPachydermClient(PachydermClient):
             .set_properties(subset=['Path'], **{'white-space': 'normal !important'}) \
             .set_table_styles(self.table_styles) \
             .hide_index()
-        return PrettyOutput(styler, df)
+        return PrettyOutput(styler, dfr)
 
     def get_logs(self, pipelines: WildcardFilter = '*', datum: Optional[str] = None,
                  last_job_only: bool = True, user_only: bool = False, master: bool = False) -> None:
