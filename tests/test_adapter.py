@@ -151,18 +151,19 @@ def pipeline_6(adapter: PachydermAdapter):
     })
 
 
+def pipeline(adapter: PachydermAdapter, pipeline_spec):
+    pipeline_name = pipeline_spec['pipeline']['name']
+    delete_pipeline_if_exists(adapter, pipeline_name)
+    adapter.create_pipeline(pipeline_spec)
+    yield pipeline_spec
+    delete_pipeline_if_exists(adapter, pipeline_name)
+
+
 def skip_if_pachyderm_unavailable(adapter: PachydermAdapter):
     if adapter._connectable is None:
         adapter.check_connectivity()
     if not adapter._connectable:
         pytest.skip('Pachyderm cluster is not available')
-
-
-def delete_pipeline_if_exists(adapter: PachydermAdapter, pipeline_name):
-    try:
-        adapter.delete_pipeline(pipeline_name)
-    except PachydermError:
-        pass
 
 
 def delete_repo_if_exists(adapter: PachydermAdapter, repo_name):
@@ -172,12 +173,11 @@ def delete_repo_if_exists(adapter: PachydermAdapter, repo_name):
         pass
 
 
-def pipeline(adapter: PachydermAdapter, pipeline_spec):
-    pipeline_name = pipeline_spec['pipeline']['name']
-    delete_pipeline_if_exists(adapter, pipeline_name)
-    adapter.create_pipeline(pipeline_spec)
-    yield pipeline_spec
-    delete_pipeline_if_exists(adapter, pipeline_name)
+def delete_pipeline_if_exists(adapter: PachydermAdapter, pipeline_name):
+    try:
+        adapter.delete_pipeline(pipeline_name)
+    except PachydermError:
+        pass
 
 
 def await_pipeline_new_state(adapter: PachydermAdapter, pipeline_name, initial_state='starting', timeout=30):
@@ -294,13 +294,6 @@ def test_stop_start_pipeline(adapter: PachydermAdapter, pipeline_1):
 
     adapter.start_pipeline(pipeline_name)
     assert await_pipeline_new_state(adapter, pipeline_name, initial_state='paused') == 'running'
-
-
-def test_invert_dict():
-    from pachypy.adapter import _invert_dict
-    assert _invert_dict({'a': '1'}) == {'1': ['a']}
-    assert _invert_dict({'a': '1', 'b': '1'}) == {'1': ['a', 'b']}
-    assert _invert_dict({'a': '1', 'b': '2'}) == {'1': ['a'], '2': ['b']}
 
 
 def test_commit_context_manager(adapter: PachydermAdapter, repo):

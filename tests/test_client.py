@@ -10,6 +10,8 @@ from pachypy.client import PachydermClient, PachydermClientError
 def get_mock_from_csv(file, datetime_cols=None, timedelta_cols=None, json_cols=None):
     file_path = os.path.join(os.path.dirname(__file__), 'mock', file)
     df = pd.read_csv(file_path, parse_dates=datetime_cols, converters={c: json.loads for c in json_cols or []})
+    for c in datetime_cols or []:
+        df[c] = df[c].dt.tz_localize('utc')
     for c in timedelta_cols or []:
         df[c] = pd.to_timedelta(df[c])
     return df
@@ -60,6 +62,7 @@ def mock_get_file(_, repo, path, **kwargs):
 def patch_adapter():
     return patch.multiple(
         'pachypy.adapter.PachydermAdapter',
+        get_version=lambda _: '1.8.6',
         list_repos=lambda _: get_mock_from_csv('list_repos.csv', datetime_cols=['created']),
         list_repo_names=lambda _: get_mock_from_csv('list_repos.csv')['repo'].tolist(),
         list_commits=mock_list_commits,
@@ -199,7 +202,7 @@ def test_list_datums(client: PachydermClient, **mocks):
     del mocks
     df = client.list_datums('e26ccf65131b4b3d9087cebc2f944279')
     assert len(df) == 10
-    assert df.index.nunique() == 5
+    assert df['datum'].nunique() == 5
     assert df['repo'].nunique() == 2
     assert df['size_bytes'].gt(0).all()
     assert len(client.list_datums('job_id_with_no_datums')) == 0
@@ -401,29 +404,3 @@ def test_add_image_digest(client: PachydermClient):
     with patch('pachypy.registry.DockerRegistryAdapter.get_image_digest', MagicMock(return_value=None)) as mock:
         for image in ['user/repo2:tag', 'user/repo2:tag@sha1:000']:
             assert client._add_image_digest(image) == image
-
-
-def test_wildcard_filter():
-    from pachypy.client import _wildcard_filter, _wildcard_match
-    x = ['a', 'ab', 'b']
-    assert _wildcard_match(x, '*') is True
-    assert _wildcard_filter(x, '*') == x
-    assert _wildcard_filter(x, None) == x
-    assert _wildcard_filter(x, 'a') == ['a']
-    assert _wildcard_filter(x, ['a']) == ['a']
-    assert _wildcard_filter(x, [['a']]) == ['a']
-    assert _wildcard_filter(x, 'a*') == ['a', 'ab']
-    assert _wildcard_filter(x, 'a?') == ['ab']
-    assert _wildcard_filter(x, [['a*'], 'b']) == x
-    assert _wildcard_filter(x, ['*a', '*b']) == x
-    assert _wildcard_filter(x, ['a', 'b']) == ['a', 'b']
-
-
-def test_expand_files():
-    from pathlib import Path
-    from pachypy.client import _expand_files
-    mock_dir = lambda glob: os.path.join(os.path.dirname(__file__), 'mock', glob)
-    assert len(_expand_files(None)) == 0
-    assert len(_expand_files(mock_dir('*.csv'))) == 7
-    assert len(_expand_files(Path(mock_dir('*.csv')))) == 7
-    assert len(_expand_files([mock_dir('list_*.csv'), Path(mock_dir('get_*.csv'))])) == 7

@@ -44,7 +44,7 @@ def invert_dict(d: Dict[str, str]) -> Dict[str, List[str]]:
 
 def to_timestamp(seconds: int, nanos: int) -> Optional[pd.Timestamp]:
     if seconds > 0:
-        return pd.Timestamp(float(f'{seconds}.{nanos}'), unit='s')
+        return pd.Timestamp(float(f'{seconds}.{nanos}'), unit='s', tz='utc')
     else:
         return None
 

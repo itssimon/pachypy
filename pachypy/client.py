@@ -246,8 +246,8 @@ class PachydermClient:
             'parallelism_constant', 'parallelism_coefficient', 'datum_tries', 'max_queue_size',
             'jobs_running', 'jobs_success', 'jobs_failure', 'created'
         ]].astype({
-            'cron_prev_tick': 'datetime64[ns]',
-            'cron_next_tick': 'datetime64[ns]',
+            'cron_prev_tick': f'datetime64[ns, {self.user_timezone}]',
+            'cron_next_tick': f'datetime64[ns, {self.user_timezone}]',
         })
 
     def list_jobs(self, pipelines: WildcardFilter = '*', n: int = 20, hide_null_jobs: bool = True) -> pd.DataFrame:
@@ -271,7 +271,7 @@ class PachydermClient:
             df[col] = self._localize_timestamp(df[col])
         df = df.reset_index().sort_values(['started', 'index'], ascending=[False, True]).head(n).reset_index(drop=True)
         df['duration'] = df['finished'] - df['started']
-        now = pd.Timestamp('now', tz=self.user_timezone).tz_localize(None)
+        now = pd.Timestamp('now', tz=self.user_timezone)
         df.loc[df['state'] == 'running', 'duration'] = now - df['started']
         df['progress'] = (df['data_processed'] + df['data_skipped']) / df['data_total']
         return df[[
@@ -834,10 +834,10 @@ class PachydermClient:
         now = datetime.now(self.pachd_timezone)
         cron = croniter(cron_spec, now)
         tick = cron.get_prev(datetime) if prev else cron.get_next(datetime)
-        return pd.Timestamp(tick.astimezone(self.user_timezone).replace(tzinfo=None))
+        return pd.Timestamp(tick.astimezone(self.user_timezone))
 
     def _localize_timestamp(self, ts: pd.Series) -> pd.Series:
-        return ts.dt.tz_localize('utc').dt.tz_convert(self.user_timezone).dt.tz_localize(None)
+        return ts.dt.tz_convert(self.user_timezone)
 
     @classmethod
     def _progress(cls, x, n=None, **kwargs):

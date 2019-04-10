@@ -164,7 +164,7 @@ class PachydermAdapter:
                 'created': to_timestamp(repo.created.seconds, repo.created.nanos),
             })
         return pd.DataFrame(res, columns=['repo', 'size_bytes', 'branches', 'created']) \
-            .astype({'size_bytes': 'int', 'created': 'datetime64[ns]'})
+            .astype({'size_bytes': 'int', 'created': 'datetime64[ns, UTC]'})
 
     @retry
     def list_repo_names(self) -> List[str]:
@@ -197,7 +197,7 @@ class PachydermAdapter:
                 stream.cancel()
                 break
         return pd.DataFrame(res, columns=['repo', 'commit', 'branches', 'size_bytes', 'started', 'finished', 'parent_commit']) \
-            .astype({'size_bytes': 'int', 'started': 'datetime64[ns]', 'finished': 'datetime64[ns]'})
+            .astype({'size_bytes': 'int', 'started': 'datetime64[ns, UTC]', 'finished': 'datetime64[ns, UTC]'})
 
     @retry
     def list_files(self, repo: str, branch: Optional[str] = 'master', commit: Optional[str] = None, glob: str = '**') -> pd.DataFrame:
@@ -226,7 +226,7 @@ class PachydermAdapter:
                     'committed': to_timestamp(file.committed.seconds, file.committed.nanos),
                 })
         return pd.DataFrame(res, columns=['repo', 'commit', 'branches', 'path', 'type', 'size_bytes', 'committed']) \
-            .astype({'size_bytes': 'int', 'committed': 'datetime64[ns]'})
+            .astype({'size_bytes': 'int', 'committed': 'datetime64[ns, UTC]'})
 
     @retry
     def list_pipelines(self) -> pd.DataFrame:
@@ -289,7 +289,7 @@ class PachydermAdapter:
             'jobs_running': 'int',
             'jobs_success': 'int',
             'jobs_failure': 'int',
-            'created': 'datetime64[ns]',
+            'created': 'datetime64[ns, UTC]',
         })
 
     @retry
@@ -330,8 +330,8 @@ class PachydermAdapter:
             'download_time', 'process_time', 'upload_time',
             'download_bytes', 'upload_bytes', 'output_commit'
         ]).astype({
-            'started': 'datetime64[ns]',
-            'finished': 'datetime64[ns]',
+            'started': 'datetime64[ns, UTC]',
+            'finished': 'datetime64[ns, UTC]',
             'restart': 'int',
             'data_processed': 'int',
             'data_skipped': 'int',
@@ -372,7 +372,7 @@ class PachydermAdapter:
                     'committed': to_timestamp(data.committed.seconds, data.committed.nanos),
                 })
         return pd.DataFrame(res, columns=['job', 'datum', 'state', 'repo', 'path', 'type', 'size_bytes', 'commit', 'committed']) \
-            .astype({'size_bytes': 'int', 'committed': 'datetime64[ns]'})
+            .astype({'size_bytes': 'int', 'committed': 'datetime64[ns, UTC]'})
 
     @retry
     def get_logs(self, pipeline: Optional[str] = None, job: Optional[str] = None, master: bool = False) -> pd.DataFrame:
@@ -398,7 +398,7 @@ class PachydermAdapter:
             'pipeline', 'job', 'ts', 'message',
             'worker', 'datum', 'user'
         ]).astype({
-            'ts': 'datetime64[ns]',
+            'ts': 'datetime64[ns, UTC]',
             'user': 'bool',
         })
 

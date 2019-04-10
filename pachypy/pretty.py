@@ -170,7 +170,7 @@ class PrettyPachydermClient(PachydermClient):
         }, axis=1, inplace=True)
         df.loc[df['jobs_running'] > 0, 'State'] = 'job running'
         now = datetime.now(self.user_timezone)
-        df['Next Tick In'] = (now - df['Next Tick'].dt.tz_localize(self.user_timezone)).dt.total_seconds() * -1
+        df['Next Tick In'] = (now - df['Next Tick']).dt.total_seconds() * -1
         df['Parallelism'] = ''
         df.loc[df['parallelism_constant'] > 0, 'Parallelism'] = \
             _fa('hashtag') + df['parallelism_constant'].astype(str)
