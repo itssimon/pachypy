@@ -54,6 +54,10 @@ class PachydermClient:
         pipeline_spec_files: Glob pattern(s) to pipeline spec files in YAML or JSON format.
         pipeline_spec_transformer: Function that takes a pipeline spec as dictionary
             as the only argument and returns a transformed pipeline spec.
+        pachd_timezone: Timezone of the system that pachd is running on. This determines
+            when cron inputs trigger. Defaults to UTC.
+        user_timezone: Timezone of the user which is used to localize timestamps.
+            Attempts to get this from the environment variable TZ or system settings if not specified.
     """
 
     def __init__(
@@ -169,7 +173,7 @@ class PachydermClient:
         if repos is not None and repos != '*':
             df = df[df.repo.isin(set(wildcard_filter(df.repo, repos)))]
         df['is_tick'] = df['repo'].str.endswith('_tick')
-        df['created'] = self._timestamp_localize(df['created'])
+        df['created'] = self._localize_timestamp(df['created'])
         df = df.sort_values(['repo']).reset_index(drop=True)
         return df[['repo', 'is_tick', 'branches', 'size_bytes', 'created']].astype({
             'is_tick': 'bool',
@@ -187,7 +191,7 @@ class PachydermClient:
             raise PachydermClientError(f'No repos matching "{repos}" were found.')
         df = pd.concat([self.adapter.list_commits(repo=repo, n=n) for repo in self._progress(repo_names, unit='repo')])
         for col in ('started', 'finished'):
-            df[col] = self._timestamp_localize(df[col])
+            df[col] = self._localize_timestamp(df[col])
         df = df.sort_values(['repo', 'started'], ascending=[True, False]).reset_index(drop=True)
         return df[['repo', 'commit', 'branches', 'size_bytes', 'started', 'finished', 'parent_commit']]
 
@@ -220,7 +224,7 @@ class PachydermClient:
             ])
         if files_only:
             df = df[df['type'] == 'file']
-        df['committed'] = self._timestamp_localize(df['committed'])
+        df['committed'] = self._localize_timestamp(df['committed'])
         df = df.sort_values(['repo', 'path']).reset_index(drop=True)
         return df[['repo', 'path', 'type', 'size_bytes', 'commit', 'branches', 'committed']]
 
@@ -233,9 +237,9 @@ class PachydermClient:
         df = self.adapter.list_pipelines()
         if pipelines is not None and pipelines != '*':
             df = df[df.pipeline.isin(set(wildcard_filter(df.pipeline, pipelines)))]
-        df['created'] = self._timestamp_localize(df['created'])
-        df['cron_prev_tick'] = df['cron_spec'].apply(lambda cs: self._cron_tick_localize(cs, prev=True))
-        df['cron_next_tick'] = df['cron_spec'].apply(lambda cs: self._cron_tick_localize(cs, prev=False))
+        df['created'] = self._localize_timestamp(df['created'])
+        df['cron_prev_tick'] = df['cron_spec'].apply(lambda cs: self._calc_cron_tick(cs, prev=True))
+        df['cron_next_tick'] = df['cron_spec'].apply(lambda cs: self._calc_cron_tick(cs, prev=False))
         df = df.sort_values(['pipeline']).reset_index(drop=True)
         return df[[
             'pipeline', 'state', 'cron_spec', 'cron_prev_tick', 'cron_next_tick', 'input', 'input_repos', 'output_branch',
@@ -264,7 +268,7 @@ class PachydermClient:
         if hide_null_jobs:
             df = df[df['data_total'] > 0]
         for col in ('started', 'finished'):
-            df[col] = self._timestamp_localize(df[col])
+            df[col] = self._localize_timestamp(df[col])
         df = df.reset_index().sort_values(['started', 'index'], ascending=[False, True]).head(n).reset_index(drop=True)
         df['duration'] = df['finished'] - df['started']
         now = pd.Timestamp('now', tz=self.user_timezone).tz_localize(None)
@@ -284,7 +288,7 @@ class PachydermClient:
             job: Job ID to return datums for.
         """
         df = self.adapter.list_datums(job)
-        df['committed'] = self._timestamp_localize(df['committed'])
+        df['committed'] = self._localize_timestamp(df['committed'])
         df = df.sort_values(['datum']).reset_index(drop=True)
         return df[[
             'datum', 'job', 'state', 'repo', 'path', 'type', 'size_bytes',
@@ -314,7 +318,7 @@ class PachydermClient:
         if user_only:
             df = df[df['user']]
         df['message'] = df['message'].fillna('')
-        df['ts'] = self._timestamp_localize(df['ts'])
+        df['ts'] = self._localize_timestamp(df['ts'])
         df['worker_ts_min'] = df.groupby(['job', 'worker'])['ts'].transform('min')
         if last_job_only and len(df) > 0:
             df['job_ts_min'] = df.groupby(['job'])['ts'].transform('min')
@@ -521,6 +525,8 @@ class PachydermClient:
             pipeline_specs: Pipeline specifications. These are read from files
                 (see property `pipeline_spec_files`) if not specified.
             recreate: Whether to delete existing pipelines before recreating them.
+            build_options: Keyword arguments to pass into the Docker `build()` method when building images.
+                A useful example is ``dict(nocache=True)``.
 
         Returns:
             Created and deleted pipeline names.
@@ -540,6 +546,8 @@ class PachydermClient:
                 (see property `pipeline_spec_files`) if not specified.
             recreate: Whether to delete existing pipelines before recreating them.
             reprocess: Whether to reprocess datums with updated pipeline.
+            build_options: Keyword arguments to pass into the Docker `build()` method when building images.
+                A useful example is ``dict(nocache=True)``.
 
         Returns:
             Updated, created and deleted pipeline names.
@@ -676,6 +684,13 @@ class PachydermClient:
         self._image_digests = {}
 
     def _build_image(self, pipeline_spec: dict, build_options: Optional[dict] = None, push: bool = True) -> None:
+        """Build and optionally push the Docker image specified in a pipeline specification.
+
+        Args:
+            pipeline_spec: Pipeline specification.
+            build_options: Keyword arguments to pass into the Docker `build()` method.
+            push: Whether to push the image to the registry after building it.
+        """
         image = pipeline_spec['transform']['image']
         if image in self._built_images:
             return
@@ -733,7 +748,7 @@ class PachydermClient:
         return pipeline_specs
 
     def _get_registry_adapter(self, image: str) -> DockerRegistryAdapter:
-        """Chooses a registry adapter based on the image string.
+        """Returns a registry adapter chosen based on an image string.
 
          - Amazon ECR if the repository contains "ecr.*.amazonaws.com"
          - Docker Registry otherwise
@@ -813,7 +828,7 @@ class PachydermClient:
     def _list_repo_names(self, match: WildcardFilter = None) -> List[str]:
         return wildcard_filter(self.adapter.list_repo_names(), match)
 
-    def _cron_tick_localize(self, cron_spec: str, prev: bool = True) -> Optional[pd.Timestamp]:
+    def _calc_cron_tick(self, cron_spec: str, prev: bool = True) -> Optional[pd.Timestamp]:
         if pd.isna(cron_spec) or cron_spec == '':
             return None
         now = datetime.now(self.pachd_timezone)
@@ -821,12 +836,12 @@ class PachydermClient:
         tick = cron.get_prev(datetime) if prev else cron.get_next(datetime)
         return pd.Timestamp(tick.astimezone(self.user_timezone).replace(tzinfo=None))
 
-    def _timestamp_localize(self, ts: pd.Series) -> pd.Series:
+    def _localize_timestamp(self, ts: pd.Series) -> pd.Series:
         return ts.dt.tz_localize('utc').dt.tz_convert(self.user_timezone).dt.tz_localize(None)
 
     @classmethod
-    def _progress(cls, x, **kwargs):
-        del kwargs
+    def _progress(cls, x, n=None, **kwargs):
+        del n, kwargs
         return x
 
     def __repr__(self) -> str:
