@@ -1,6 +1,6 @@
 # pachypy - A Python client library for Pachyderm
 
-[![Python 3.5](https://img.shields.io/badge/python-3.5+-blue.svg)](#)
+[![Python 3.6](https://img.shields.io/badge/python-3.6+-blue.svg)](#)
 [![Documentation Status](https://readthedocs.org/projects/pachypy/badge/?version=latest)](https://pachypy.readthedocs.io/en/latest/?badge=latest)
 [![Coverage Status](https://img.shields.io/codecov/c/github/itssimon/pachypy.svg)](https://codecov.io/gh/itssimon/pachypy)
 [![Codacy Badge](https://img.shields.io/codacy/grade/889241976fca40a18591be7db43698fe.svg)](https://app.codacy.com/app/itssimon/pachypy)
@@ -22,7 +22,7 @@ Key features include:
 
 pachypy uses the protobufs from the official [python_pachyderm](https://github.com/pachyderm/python-pachyderm) package to communicate with Pachyderm.
 
-*Requires Python 3.5 or higher*
+*Requires Python 3.6 or higher*
 
 ![PrettyPachydermClient.list_jobs()](examples/list_jobs_screenshot.png?raw=true)
 
