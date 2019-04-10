@@ -31,6 +31,8 @@ from python_pachyderm.client.pps.pps_pb2_grpc import APIStub as PpsAPIStub
 from python_pachyderm.client.version.versionpb.version_pb2 import Version
 from python_pachyderm.client.version.versionpb.version_pb2_grpc import APIStub as VersionAPIStub
 
+from .utils import invert_dict, to_timestamp, to_timedelta
+
 
 T = TypeVar('T')
 
@@ -159,7 +161,7 @@ class PachydermAdapter:
                 'repo': repo.repo.name,
                 'size_bytes': repo.size_bytes,
                 'branches': [b.name for b in repo.branches],
-                'created': _to_timestamp(repo.created.seconds, repo.created.nanos),
+                'created': to_timestamp(repo.created.seconds, repo.created.nanos),
             })
         return pd.DataFrame(res, columns=['repo', 'size_bytes', 'branches', 'created']) \
             .astype({'size_bytes': 'int', 'created': 'datetime64[ns]'})
@@ -178,7 +180,7 @@ class PachydermAdapter:
     def list_commits(self, repo: str, n: int = 20) -> pd.DataFrame:
         i = 1
         res = []
-        commit_branches = _invert_dict(self.list_branch_heads(repo))
+        commit_branches = invert_dict(self.list_branch_heads(repo))
         stream = self.pfs_stub.ListCommitStream(ListCommitRequest(repo=Repo(name=repo)))
         for commit in stream:
             res.append({
@@ -187,8 +189,8 @@ class PachydermAdapter:
                 'parent_commit': commit.parent_commit.id,
                 'branches': commit_branches.get(commit.commit.id, []),
                 'size_bytes': commit.size_bytes,
-                'started': _to_timestamp(commit.started.seconds, commit.started.nanos),
-                'finished': _to_timestamp(commit.finished.seconds, commit.finished.nanos),
+                'started': to_timestamp(commit.started.seconds, commit.started.nanos),
+                'finished': to_timestamp(commit.finished.seconds, commit.finished.nanos),
             })
             i += 1
             if n is not None and i > n:
@@ -208,7 +210,7 @@ class PachydermAdapter:
         }
         res = []
         branch_heads = self.list_branch_heads(repo)
-        commit_branches = _invert_dict(branch_heads)
+        commit_branches = invert_dict(branch_heads)
         if commit is None and branch is not None:
             commit = branch_heads.get(branch)
         if commit is not None:
@@ -221,7 +223,7 @@ class PachydermAdapter:
                     'path': file.file.path,
                     'type': file_type_mapping.get(file.file_type, 'unknown'),
                     'size_bytes': file.size_bytes,
-                    'committed': _to_timestamp(file.committed.seconds, file.committed.nanos),
+                    'committed': to_timestamp(file.committed.seconds, file.committed.nanos),
                 })
         return pd.DataFrame(res, columns=['repo', 'commit', 'branches', 'path', 'type', 'size_bytes', 'committed']) \
             .astype({'size_bytes': 'int', 'committed': 'datetime64[ns]'})
@@ -262,7 +264,7 @@ class PachydermAdapter:
             res.append({
                 'pipeline': pipeline.pipeline.name,
                 'image': pipeline.transform.image,
-                'cron_spec': ', '.join([cron['spec'] for cron in _pipeline_input_cron_specs(pipeline.input)]),
+                'cron_spec': ', '.join([cron['spec'] for cron in self._get_pipeline_input_cron_specs(pipeline.input)]),
                 'input': input_string(pipeline.input),
                 'input_repos': list(input_repos(pipeline.input)),
                 'output_branch': pipeline.output_branch,
@@ -273,7 +275,7 @@ class PachydermAdapter:
                 'jobs_running': pipeline.job_counts[JOB_RUNNING],
                 'jobs_success': pipeline.job_counts[JOB_SUCCESS],
                 'jobs_failure': pipeline.job_counts[JOB_FAILURE],
-                'created': _to_timestamp(pipeline.created_at.seconds, pipeline.created_at.nanos),
+                'created': to_timestamp(pipeline.created_at.seconds, pipeline.created_at.nanos),
                 'state': pipeline_state_mapping.get(pipeline.state, 'unknown'),
             })
         return pd.DataFrame(res, columns=[
@@ -305,15 +307,15 @@ class PachydermAdapter:
                 'job': job.job.id,
                 'pipeline': job.pipeline.name,
                 'state': job_state_mapping.get(job.state, 'unknown'),
-                'started': _to_timestamp(job.started.seconds, job.started.nanos),
-                'finished': _to_timestamp(job.finished.seconds, job.finished.nanos),
+                'started': to_timestamp(job.started.seconds, job.started.nanos),
+                'finished': to_timestamp(job.finished.seconds, job.finished.nanos),
                 'restart': job.restart,
                 'data_processed': job.data_processed,
                 'data_skipped': job.data_skipped,
                 'data_total': job.data_total,
-                'download_time': _to_timedelta(job.stats.download_time.seconds, job.stats.download_time.nanos),
-                'process_time': _to_timedelta(job.stats.process_time.seconds, job.stats.process_time.nanos),
-                'upload_time': _to_timedelta(job.stats.upload_time.seconds, job.stats.upload_time.nanos),
+                'download_time': to_timedelta(job.stats.download_time.seconds, job.stats.download_time.nanos),
+                'process_time': to_timedelta(job.stats.process_time.seconds, job.stats.process_time.nanos),
+                'upload_time': to_timedelta(job.stats.upload_time.seconds, job.stats.upload_time.nanos),
                 'download_bytes': job.stats.download_bytes,
                 'upload_bytes': job.stats.upload_bytes,
                 'output_commit': job.output_commit.id,
@@ -367,7 +369,7 @@ class PachydermAdapter:
                     'path': data.file.path,
                     'type': file_type_mapping.get(data.file_type, 'unknown'),
                     'size_bytes': data.size_bytes,
-                    'committed': _to_timestamp(data.committed.seconds, data.committed.nanos),
+                    'committed': to_timestamp(data.committed.seconds, data.committed.nanos),
                 })
         return pd.DataFrame(res, columns=['job', 'datum', 'state', 'repo', 'path', 'type', 'size_bytes', 'commit', 'committed']) \
             .astype({'size_bytes': 'int', 'committed': 'datetime64[ns]'})
@@ -386,7 +388,7 @@ class PachydermAdapter:
                 res.append({
                     'pipeline': msg.pipeline_name,
                     'job': msg.job_id,
-                    'ts': _to_timestamp(msg.ts.seconds, msg.ts.nanos),
+                    'ts': to_timestamp(msg.ts.seconds, msg.ts.nanos),
                     'message': message,
                     'worker': msg.worker_id,
                     'datum': msg.datum_id,
@@ -445,7 +447,7 @@ class PachydermAdapter:
         transform_fields = {f.name for f in Transform.DESCRIPTOR.fields}
         pipeline_spec = {k: v for k, v in pipeline_spec.items() if k in fields}
         pipeline_spec['transform'] = {k: v for k, v in pipeline_spec['transform'].items() if k in transform_fields}
-        pipeline_spec['input'] = _transform_cron_start(pipeline_spec['input'])
+        pipeline_spec['input'] = self._transform_cron_start(pipeline_spec['input'])
         self.pps_stub.CreatePipeline(CreatePipelineRequest(**pipeline_spec))
 
     def update_pipeline(self, pipeline_spec: dict, reprocess: bool = False) -> None:
@@ -468,7 +470,7 @@ class PachydermAdapter:
     @retry
     def get_pipeline_cron_specs(self, pipeline: str) -> List[Dict[str, Any]]:
         res = self.pps_stub.InspectPipeline(InspectPipelineRequest(pipeline=Pipeline(name=pipeline)))
-        return list(_pipeline_input_cron_specs(res.input))
+        return list(self._get_pipeline_input_cron_specs(res.input))
 
     @retry
     def create_repo(self, repo: str, description: Optional[str] = None) -> None:
@@ -510,6 +512,35 @@ class PachydermAdapter:
     def get_version(self) -> str:
         version = self.version_stub.GetVersion(Version())
         return f'{version.major}.{version.minor}.{version.micro}'
+
+    @classmethod
+    def _get_pipeline_input_cron_specs(cls, i: Input) -> Generator[Dict[str, Any], None, None]:
+        if i.cron.spec != '':
+            yield {
+                'name': str(i.cron.name),
+                'spec': str(i.cron.spec),
+                'repo': str(i.cron.repo),
+                'overwrite': bool(i.cron.overwrite),
+            }
+        cross_or_union = i.cross or i.union
+        if cross_or_union:
+            for j in cross_or_union:
+                yield from cls._get_pipeline_input_cron_specs(j)
+
+    @classmethod
+    def _transform_cron_start(cls, i: dict) -> dict:
+        for k, v in i.items():
+            if k == 'cron' and 'start' in v:
+                dt = pd.to_datetime(v['start'])
+                if dt.tzinfo:
+                    dt = dt.tz_convert('utc').tz_localize(None)
+                ts = Timestamp()
+                ts.FromDatetime(dt.to_pydatetime())
+                v['start'] = ts
+            elif k in ('cross', 'union'):
+                for j in v:
+                    j = cls._transform_cron_start(j)
+        return i
 
 
 class PachydermCommitAdapter:
@@ -663,50 +694,3 @@ class PachydermCommitAdapter:
     def _raise_if_finished(self):
         if self.finished:
             raise PachydermError(f'Commit {self.commit} is already finished')
-
-
-def _pipeline_input_cron_specs(i: Input) -> Generator[Dict[str, Any], None, None]:
-    if i.cron.spec != '':
-        yield {
-            'name': str(i.cron.name),
-            'spec': str(i.cron.spec),
-            'repo': str(i.cron.repo),
-            'overwrite': bool(i.cron.overwrite),
-        }
-    cross_or_union = i.cross or i.union
-    if cross_or_union:
-        for j in cross_or_union:
-            yield from _pipeline_input_cron_specs(j)
-
-
-def _invert_dict(d: Dict[str, str]) -> Dict[str, List[str]]:
-    inverted: Dict[str, List[str]] = {}
-    for key, value in d.items():
-        inverted.setdefault(value, []).append(key)
-    return inverted
-
-
-def _to_timestamp(seconds: int, nanos: int) -> Optional[pd.Timestamp]:
-    if seconds > 0:
-        return pd.Timestamp(float(f'{seconds}.{nanos}'), unit='s')
-    else:
-        return None
-
-
-def _to_timedelta(seconds: int, nanos: int) -> pd.Timedelta:
-    return pd.Timedelta(float(f'{seconds}.{nanos}'), unit='s')
-
-
-def _transform_cron_start(i: dict) -> dict:
-    for k, v in i.items():
-        if k == 'cron' and 'start' in v:
-            dt = pd.to_datetime(v['start'])
-            if dt.tzinfo:
-                dt = dt.tz_convert('utc').tz_localize(None)
-            ts = Timestamp()
-            ts.FromDatetime(dt.to_pydatetime())
-            v['start'] = ts
-        elif k in ('cross', 'union'):
-            for j in v:
-                j = _transform_cron_start(j)
-    return i

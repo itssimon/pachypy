@@ -7,11 +7,8 @@ import json
 import logging
 import os
 import re
-import time
 from collections import namedtuple
-from datetime import datetime, timezone, tzinfo
-from fnmatch import fnmatch
-from glob import glob
+from datetime import datetime, tzinfo
 from pathlib import Path
 from typing import List, Set, Dict, Iterable, Callable, IO, BinaryIO, Union, Optional, Any
 
@@ -25,9 +22,9 @@ from tzlocal import get_localzone
 
 from .adapter import PachydermAdapter, PachydermCommitAdapter, PachydermError
 from .registry import DockerRegistryAdapter, AmazonECRAdapter
+from .utils import WildcardFilter, FileGlob, wildcard_filter, wildcard_match, expand_files
 
-WildcardFilter = Optional[Union[str, Iterable[str]]]
-FileGlob = Optional[Union[str, Path, Iterable[Union[str, Path]]]]
+
 PipelineChanges = namedtuple('PipelineChanges', ['created', 'updated', 'deleted'])
 
 
@@ -77,14 +74,16 @@ class PachydermClient:
         self._image_digests: Dict[str, str] = {}
         self._built_images: Set[str] = set()
         self._logger: Optional[logging.Logger] = None
+        self._user_timezone: Optional[tzinfo] = None
+        self._pachd_timezone: Optional[tzinfo] = None
 
         self.adapter = PachydermAdapter(host=host, port=port)
         self.add_image_digests = add_image_digests
         self.build_images = build_images
         self.pipeline_spec_files = pipeline_spec_files
         self.pipeline_spec_transformer = pipeline_spec_transformer
-        self.pachd_timezone = _resolve_pachd_timezone(pachd_timezone)
-        self.user_timezone = _resolve_user_timezone(user_timezone)
+        self.pachd_timezone = pachd_timezone
+        self.user_timezone = user_timezone
 
         self.logger.debug(f'Created client for Pachyderm cluster at {self.adapter.host}:{self.adapter.port}')
 
@@ -96,7 +95,7 @@ class PachydermClient:
 
     @property
     def pipeline_spec_files(self) -> List[str]:
-        return _expand_files(self._pipeline_spec_files)
+        return expand_files(self._pipeline_spec_files)
 
     @pipeline_spec_files.setter
     def pipeline_spec_files(self, files: FileGlob):
@@ -129,6 +128,34 @@ class PachydermClient:
         return self._amazon_ecr
 
     @property
+    def user_timezone(self) -> tzinfo:
+        if self._user_timezone is None:
+            tz = os.environ.get('TZ')
+            if tz is not None:
+                self._user_timezone = pytz.timezone(tz)
+            else:
+                self._user_timezone = get_localzone()  # type: ignore
+        return self._user_timezone
+
+    @user_timezone.setter
+    def user_timezone(self, tz: Optional[Union[tzinfo, str]]):
+        if isinstance(tz, str):
+            self._user_timezone = pytz.timezone(tz)
+        else:
+            self._user_timezone = tz
+
+    @property
+    def pachd_timezone(self):
+        return self._pachd_timezone or pytz.utc
+
+    @pachd_timezone.setter
+    def pachd_timezone(self, tz: Optional[Union[tzinfo, str]]):
+        if isinstance(tz, str):
+            self._pachd_timezone = pytz.timezone(tz)
+        else:
+            self._pachd_timezone = tz
+
+    @property
     def pachd_version(self) -> str:
         return self.adapter.get_version()
 
@@ -140,7 +167,7 @@ class PachydermClient:
         """
         df = self.adapter.list_repos()
         if repos is not None and repos != '*':
-            df = df[df.repo.isin(set(_wildcard_filter(df.repo, repos)))]
+            df = df[df.repo.isin(set(wildcard_filter(df.repo, repos)))]
         df['is_tick'] = df['repo'].str.endswith('_tick')
         df['created'] = self._timestamp_localize(df['created'])
         df = df.sort_values(['repo']).reset_index(drop=True)
@@ -205,7 +232,7 @@ class PachydermClient:
         """
         df = self.adapter.list_pipelines()
         if pipelines is not None and pipelines != '*':
-            df = df[df.pipeline.isin(set(_wildcard_filter(df.pipeline, pipelines)))]
+            df = df[df.pipeline.isin(set(wildcard_filter(df.pipeline, pipelines)))]
         df['created'] = self._timestamp_localize(df['created'])
         df['cron_prev_tick'] = df['cron_spec'].apply(lambda cs: self._cron_tick_localize(cs, prev=True))
         df['cron_next_tick'] = df['cron_spec'].apply(lambda cs: self._cron_tick_localize(cs, prev=False))
@@ -479,10 +506,11 @@ class PachydermClient:
         destination = Path(destination).expanduser().resolve()
         files = self.adapter.list_files(repo, branch=branch, commit=commit, glob=glob)
         files = files[files['type'] == 'file']
-        for _, row in self._progress(files.iterrows(), unit='file'):
+        for _, row in self._progress(files.iterrows(), n=len(files), unit='file'):
             local_path = destination / os.path.relpath(row['path'], path)
             os.makedirs(local_path.parent, exist_ok=True)
             self.get_file(repo, path=row['path'], commit=row['commit'], destination=local_path)
+            self.logger.info(f"Downloaded '{row['path']}' to '{local_path.parent}'")
 
     def create_pipelines(self, pipelines: WildcardFilter = '*', pipeline_specs: Optional[List[dict]] = None,
                          recreate: bool = False, build_options: Optional[dict] = None) -> PipelineChanges:
@@ -600,7 +628,7 @@ class PachydermClient:
         files = self.pipeline_spec_files
         files_subset = [
             f for f in files
-            if _wildcard_match(os.path.basename(f), pipelines) or (isinstance(pipelines, str) and pipelines.startswith(os.path.splitext(os.path.basename(f))[0]))
+            if wildcard_match(os.path.basename(f), pipelines) or (isinstance(pipelines, str) and pipelines.startswith(os.path.splitext(os.path.basename(f))[0]))
         ]
         files = files_subset if len(files_subset) > 0 else files
 
@@ -629,7 +657,7 @@ class PachydermClient:
         if pipelines != '*':
             def wildcard_match_pipeline_spec(p):
                 try:
-                    return _wildcard_match(p['pipeline'] if isinstance(p['pipeline'], str) else p['pipeline']['name'], pipelines)
+                    return wildcard_match(p['pipeline'] if isinstance(p['pipeline'], str) else p['pipeline']['name'], pipelines)
                 except (KeyError, TypeError):
                     return False
             pipeline_specs = [p for p in pipeline_specs if wildcard_match_pipeline_spec(p)]
@@ -747,7 +775,7 @@ class PachydermClient:
         if pipeline_specs is None:
             pipeline_specs = self.read_pipeline_specs(pipelines)
         elif pipelines != '*':
-            pipeline_specs = [p for p in pipeline_specs if _wildcard_match(p['pipeline']['name'], pipelines)]
+            pipeline_specs = [p for p in pipeline_specs if wildcard_match(p['pipeline']['name'], pipelines)]
 
         self.clear_cache()
         existing_pipelines = set(self._list_pipeline_names())
@@ -780,10 +808,10 @@ class PachydermClient:
         return PipelineChanges(created=created_pipelines, updated=updated_pipelines, deleted=deleted_pipelines)
 
     def _list_pipeline_names(self, match: WildcardFilter = None) -> List[str]:
-        return _wildcard_filter(self.adapter.list_pipeline_names(), match)
+        return wildcard_filter(self.adapter.list_pipeline_names(), match)
 
     def _list_repo_names(self, match: WildcardFilter = None) -> List[str]:
-        return _wildcard_filter(self.adapter.list_repo_names(), match)
+        return wildcard_filter(self.adapter.list_repo_names(), match)
 
     def _cron_tick_localize(self, cron_spec: str, prev: bool = True) -> Optional[pd.Timestamp]:
         if pd.isna(cron_spec) or cron_spec == '':
@@ -861,7 +889,7 @@ class PachydermCommit(PachydermCommitAdapter):
         Returns:
             Local paths of uploaded files.
         """
-        files = _expand_files(files)
+        files = expand_files(files)
         for file in self.client._progress(files, unit='file'):
             if keep_structure:
                 file_path = os.path.join(path, os.path.relpath(file, base_path))
@@ -909,50 +937,3 @@ class PachydermCommit(PachydermCommitAdapter):
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}('{self.commit or ''}')"
-
-
-def _resolve_user_timezone(tz: Optional[Union[tzinfo, str]]) -> tzinfo:
-    if not tz:
-        if 'TZ' in os.environ:
-            time.tzset()
-            tz = datetime.now(timezone.utc).astimezone().tzinfo
-            return tz or timezone.utc
-        else:
-            return get_localzone()  # type: ignore
-    elif isinstance(tz, str):
-        return pytz.timezone(tz)
-    else:
-        return tz
-
-
-def _resolve_pachd_timezone(tz: Optional[Union[tzinfo, str]]) -> tzinfo:
-    if not tz:
-        return timezone.utc
-    elif isinstance(tz, str):
-        return pytz.timezone(tz)
-    else:
-        return tz
-
-
-def _wildcard_filter(x: Iterable[str], pattern: WildcardFilter) -> List[str]:
-    if pattern is None or pattern == '*':
-        return list(x)
-    else:
-        return [i for i in x if _wildcard_match(i, pattern)]
-
-
-def _wildcard_match(x: str, pattern: WildcardFilter) -> bool:
-    if pattern is None or pattern == '*':
-        return True
-    elif isinstance(pattern, str):
-        return fnmatch(x, pattern)
-    else:
-        return any([_wildcard_match(x, m) for m in pattern])
-
-
-def _expand_files(files: FileGlob) -> List[str]:
-    if not files:
-        return []
-    if isinstance(files, str) or isinstance(files, Path):
-        files = [files]
-    return sorted(list(set.union(*[set(glob(os.path.expanduser(f))) for f in files])))
