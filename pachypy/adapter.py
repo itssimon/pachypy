@@ -1,7 +1,7 @@
 import os
 import time
 import json
-from typing import List, Dict, Generator, Union, Optional, TypeVar, Any, cast
+from typing import List, Dict, Generator, Callable, Union, Optional, TypeVar, Any, cast
 
 import grpc
 import pandas as pd
@@ -412,6 +412,7 @@ class PachydermAdapter:
         for k in ['createdAt']:
             if k in info:
                 info[k] = pd.to_datetime(info[k]).to_pydatetime(warn=False)
+        info['input'] = self._transform_cron_start(info['input'], lambda x: pd.to_datetime(x).to_pydatetime(warn=False))
         info['state'] = pipeline_state_mapping[info['state']]
         if 'jobCounts' in info:
             info['jobCounts'] = {job_state_mapping[int(k)]: v for k, v in info['jobCounts'].items()}
@@ -429,6 +430,7 @@ class PachydermAdapter:
         for k in ['started', 'finished']:
             if k in info:
                 info[k] = pd.to_datetime(info[k]).to_pydatetime(warn=False)
+        info['input'] = self._transform_cron_start(info['input'], lambda x: pd.to_datetime(x).to_pydatetime(warn=False))
         info['state'] = job_state_mapping[info['state']]
         if 'stats' in info:
             for k in ['downloadTime', 'processTime', 'uploadTime']:
@@ -447,7 +449,16 @@ class PachydermAdapter:
         transform_fields = {f.name for f in Transform.DESCRIPTOR.fields}
         pipeline_spec = {k: v for k, v in pipeline_spec.items() if k in fields}
         pipeline_spec['transform'] = {k: v for k, v in pipeline_spec['transform'].items() if k in transform_fields}
-        pipeline_spec['input'] = self._transform_cron_start(pipeline_spec['input'])
+
+        def protobuf_timestamp(x):
+            dt = pd.to_datetime(x)
+            if dt.tzinfo:
+                dt = dt.tz_convert('utc').tz_localize(None)
+            ts = Timestamp()
+            ts.FromDatetime(dt.to_pydatetime())
+            return ts
+
+        pipeline_spec['input'] = self._transform_cron_start(pipeline_spec['input'], protobuf_timestamp)
         self.pps_stub.CreatePipeline(CreatePipelineRequest(**pipeline_spec))
 
     def update_pipeline(self, pipeline_spec: dict, reprocess: bool = False) -> None:
@@ -528,18 +539,13 @@ class PachydermAdapter:
                 yield from cls._get_pipeline_input_cron_specs(j)
 
     @classmethod
-    def _transform_cron_start(cls, i: dict) -> dict:
+    def _transform_cron_start(cls, i: dict, transformer: Callable) -> dict:
         for k, v in i.items():
             if k == 'cron' and 'start' in v:
-                dt = pd.to_datetime(v['start'])
-                if dt.tzinfo:
-                    dt = dt.tz_convert('utc').tz_localize(None)
-                ts = Timestamp()
-                ts.FromDatetime(dt.to_pydatetime())
-                v['start'] = ts
+                v['start'] = transformer(v['start'])
             elif k in ('cross', 'union'):
                 for j in v:
-                    j = cls._transform_cron_start(j)
+                    j = cls._transform_cron_start(j, transformer)
         return i
 
 

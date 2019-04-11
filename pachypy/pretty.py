@@ -3,6 +3,7 @@ __all__ = [
 ]
 
 import logging
+import re
 from typing import Dict, List, Iterable, Union, Optional
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
@@ -47,11 +48,11 @@ class CPrintHandler(logging.StreamHandler):
         cprint(self.format(record), color=color)
 
 
-class PrettyOutput(HTML):
+class PrettyTable(HTML):
 
     def __init__(self, styler: style.Styler, df: pd.DataFrame):
         super().__init__(data=styler.render())
-        self.df = df
+        self.raw = df
         self.inject_dependencies()
 
     def inject_dependencies(self) -> None:
@@ -61,6 +62,19 @@ class PrettyOutput(HTML):
             <script>var clipboard = new ClipboardJS('.copyable');</script>
         '''
         self.data = fa_css + cb_js + self.data  # type: ignore
+
+
+class PrettyYAML(HTML):
+
+    def __init__(self, obj: object):
+        super().__init__(data=self.format_yaml(obj))
+        self.raw = obj
+
+    @staticmethod
+    def format_yaml(obj: object) -> str:
+        s = str(yaml.dump(obj))
+        s = re.sub(r'(^[\s-]*)([^\s]+:)', '\\1<span style="color: #888;">\\2</span>', s, flags=re.MULTILINE)
+        return '<pre style="border: 1px #ccc solid; padding: 10px 12px; line-height: 140%;">' + s + '</pre>'
 
 
 class PrettyPachydermClient(PachydermClient):
@@ -79,7 +93,7 @@ class PrettyPachydermClient(PachydermClient):
             self._logger.propagate = False
         return self._logger
 
-    def list_repos(self, repos: WildcardFilter = '*') -> PrettyOutput:
+    def list_repos(self, repos: WildcardFilter = '*') -> PrettyTable:
         df = super().list_repos(repos=repos)
         dfr = df.copy()
         df.rename({
@@ -97,9 +111,9 @@ class PrettyPachydermClient(PachydermClient):
             .set_properties(subset=['Branches'], **{'white-space': 'normal !important'}) \
             .set_table_styles(self.table_styles) \
             .hide_index()
-        return PrettyOutput(styler, dfr)
+        return PrettyTable(styler, dfr)
 
-    def list_commits(self, repos: WildcardFilter, n: int = 10) -> PrettyOutput:
+    def list_commits(self, repos: WildcardFilter, n: int = 10) -> PrettyTable:
         df = super().list_commits(repos=repos, n=n)
         dfr = df.copy()
         df.rename({
@@ -123,10 +137,10 @@ class PrettyPachydermClient(PachydermClient):
             }) \
             .set_table_styles(self.table_styles) \
             .hide_index()
-        return PrettyOutput(styler, dfr)
+        return PrettyTable(styler, dfr)
 
     def list_files(self, repos: WildcardFilter, branch: Optional[str] = 'master', commit: Optional[str] = None,
-                   glob: str = '**', files_only: bool = True) -> PrettyOutput:
+                   glob: str = '**', files_only: bool = True) -> PrettyTable:
         df = super().list_files(repos=repos, branch=branch, commit=commit, glob=glob, files_only=files_only)
         dfr = df.copy()
         df.rename({
@@ -150,9 +164,9 @@ class PrettyPachydermClient(PachydermClient):
             .set_properties(subset=['Path'], **{'white-space': 'normal !important'}) \
             .set_table_styles(self.table_styles) \
             .hide_index()
-        return PrettyOutput(styler, dfr)
+        return PrettyTable(styler, dfr)
 
-    def list_pipelines(self, pipelines: WildcardFilter = '*') -> PrettyOutput:
+    def list_pipelines(self, pipelines: WildcardFilter = '*') -> PrettyTable:
         df = super().list_pipelines(pipelines=pipelines)
         dfr = df.copy()
         df['sort_key'] = df.index.map(self._calc_pipeline_sort_key(df['input_repos'].to_dict()))
@@ -190,9 +204,9 @@ class PrettyPachydermClient(PachydermClient):
             .set_properties(subset=['Input'], **{'white-space': 'normal !important'}) \
             .set_table_styles(self.table_styles) \
             .hide_index()
-        return PrettyOutput(styler, dfr)
+        return PrettyTable(styler, dfr)
 
-    def list_jobs(self, pipelines: WildcardFilter = '*', n: int = 20, hide_null_jobs: bool = True) -> PrettyOutput:
+    def list_jobs(self, pipelines: WildcardFilter = '*', n: int = 20, hide_null_jobs: bool = True) -> PrettyTable:
         df = super().list_jobs(pipelines=pipelines, n=n, hide_null_jobs=hide_null_jobs)
         dfr = df.copy()
         df.rename({
@@ -228,9 +242,9 @@ class PrettyPachydermClient(PachydermClient):
             }) \
             .set_table_styles(self.table_styles) \
             .hide_index()
-        return PrettyOutput(styler, dfr)
+        return PrettyTable(styler, dfr)
 
-    def list_datums(self, job: str) -> PrettyOutput:
+    def list_datums(self, job: str) -> PrettyTable:
         df = super().list_datums(job=job)
         dfr = df.copy()
         df.rename({
@@ -259,7 +273,7 @@ class PrettyPachydermClient(PachydermClient):
             .set_properties(subset=['Path'], **{'white-space': 'normal !important'}) \
             .set_table_styles(self.table_styles) \
             .hide_index()
-        return PrettyOutput(styler, dfr)
+        return PrettyTable(styler, dfr)
 
     def get_logs(self, pipelines: WildcardFilter = '*', datum: Optional[str] = None,
                  last_job_only: bool = True, user_only: bool = False, master: bool = False) -> None:
@@ -282,17 +296,17 @@ class PrettyPachydermClient(PachydermClient):
             job = row.job
             worker = row.worker
 
-    def inspect_pipeline(self, pipeline: str):
+    def inspect_pipeline(self, pipeline: str) -> PrettyYAML:
         info = super().inspect_pipeline(pipeline)
-        print(yaml.dump(info))
+        return PrettyYAML(info)
 
-    def inspect_job(self, job: str):
+    def inspect_job(self, job: str) -> PrettyYAML:
         info = super().inspect_job(job)
-        print(yaml.dump(info))
+        return PrettyYAML(info)
 
-    def inspect_datum(self, job: str, datum: str):
+    def inspect_datum(self, job: str, datum: str) -> PrettyYAML:
         info = super().inspect_datum(job, datum)
-        print(yaml.dump(info))
+        return PrettyYAML(info)
 
     @staticmethod
     def _calc_pipeline_sort_key(input_repos: Dict[str, List[str]]):
