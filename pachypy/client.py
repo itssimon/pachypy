@@ -514,7 +514,7 @@ class PachydermClient:
             local_path = destination / os.path.relpath(row['path'], path)
             os.makedirs(local_path.parent, exist_ok=True)
             self.get_file(repo, path=row['path'], commit=row['commit'], destination=local_path)
-            self.logger.info(f"Downloaded '{row['path']}' to '{local_path.parent}'")
+            self.logger.info(f"Downloaded '{os.path.basename(row['path'])}' to '{local_path.parent}'")
 
     def create_pipelines(self, pipelines: WildcardFilter = '*', pipeline_specs: Optional[List[dict]] = None,
                          recreate: bool = False, build_options: Optional[dict] = None) -> PipelineChanges:
