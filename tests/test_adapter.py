@@ -448,6 +448,13 @@ def test_list_jobs_get_logs(adapter: PachydermAdapter, pipeline_2):
         c.put_file_bytes(b'0', 'time')
     assert await_job_completed_state(adapter, pipeline_name) == 'success'
 
+    pipeline_info = adapter.inspect_pipeline(pipeline_name)
+    assert pipeline_info['pipeline']['name'] == pipeline_name
+    assert pipeline_info['state'] == 'running'
+    assert pipeline_info['jobCounts']['success'] > 0
+    assert pipeline_info['version'] == 1
+    assert pipeline_info['createdAt'].tzinfo is not None
+
     jobs = adapter.list_jobs(pipeline=pipeline_name)
     assert len(jobs) == 1
     job = jobs['job'].iloc[0]
@@ -494,10 +501,3 @@ def test_get_file(adapter: PachydermAdapter, repo):
 def test_pipeline_input_cron_specs(adapter: PachydermAdapter, pipeline_5, pipeline_6):
     assert len(adapter.get_pipeline_cron_specs(pipeline_5['pipeline']['name'])) == 0
     assert len(adapter.get_pipeline_cron_specs(pipeline_6['pipeline']['name'])) == 2
-
-
-def test_inspect_pipeline(adapter: PachydermAdapter, pipeline_5):
-    info = adapter.inspect_pipeline(pipeline_5['pipeline']['name'])
-    assert info['pipeline']['name'] == pipeline_5['pipeline']['name']
-    assert info['version'] == 1
-    assert info['createdAt'].tzinfo is not None
