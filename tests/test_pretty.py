@@ -114,7 +114,6 @@ def test_pipeline_sort_key():
 
 def test_style_job_progress():
     import pandas as pd
-    from pachypy.pretty import PrettyPachydermClient
     assert not PrettyPachydermClient._style_job_progress(pd.Series(['0% | 0 + 0 / 2']))[0].endswith('0.0%)')
     assert PrettyPachydermClient._style_job_progress(pd.Series(['50% | 1 + 0 / 2']))[0].endswith('50.0%)')
     assert PrettyPachydermClient._style_job_progress(pd.Series(['100% | 1 + 1 / 2']))[0] == ''
@@ -134,34 +133,32 @@ def test_format_datetime(pretty_client):
 
 
 def test_format_duration():
-    from pachypy.pretty import PrettyPachydermClient as client
-    assert client._format_duration(None) == ''
-    assert client._format_duration(0) == ''
-    assert client._format_duration(0.001) == '1 ms'
-    assert client._format_duration(1) == '1 sec'
-    assert client._format_duration(2) == '2 secs'
-    assert client._format_duration(2.1) == '2 secs'
-    assert client._format_duration(60) == '1 min'
-    assert client._format_duration(120) == '2 mins'
-    assert client._format_duration(121) == '2 mins'
-    assert client._format_duration(3600) == '1 hour'
-    assert client._format_duration(7200) == '2 hours'
-    assert client._format_duration(3660) == '1 hour, 1 min'
-    assert client._format_duration(7260) == '2 hours, 1 min'
-    assert client._format_duration(7320) == '2 hours, 2 mins'
-    assert client._format_duration(7322) == '2 hours, 2 mins'
-    assert client._format_duration(86400) == '1 day'
-    assert client._format_duration(90000) == '1 day, 1 hour'
+    assert PrettyPachydermClient._format_duration(None) == ''
+    assert PrettyPachydermClient._format_duration(0) == ''
+    assert PrettyPachydermClient._format_duration(0.001) == '1 ms'
+    assert PrettyPachydermClient._format_duration(1) == '1 sec'
+    assert PrettyPachydermClient._format_duration(2) == '2 secs'
+    assert PrettyPachydermClient._format_duration(2.1) == '2 secs'
+    assert PrettyPachydermClient._format_duration(60) == '1 min'
+    assert PrettyPachydermClient._format_duration(120) == '2 mins'
+    assert PrettyPachydermClient._format_duration(121) == '2 mins'
+    assert PrettyPachydermClient._format_duration(3600) == '1 hour'
+    assert PrettyPachydermClient._format_duration(7200) == '2 hours'
+    assert PrettyPachydermClient._format_duration(3660) == '1 hour, 1 min'
+    assert PrettyPachydermClient._format_duration(7260) == '2 hours, 1 min'
+    assert PrettyPachydermClient._format_duration(7320) == '2 hours, 2 mins'
+    assert PrettyPachydermClient._format_duration(7322) == '2 hours, 2 mins'
+    assert PrettyPachydermClient._format_duration(86400) == '1 day'
+    assert PrettyPachydermClient._format_duration(90000) == '1 day, 1 hour'
 
 
 def test_format_size():
-    from pachypy.pretty import PrettyPachydermClient as client
-    assert client._format_size(0) == '0 bytes'
-    assert client._format_size(1) == '1 byte'
-    assert client._format_size(1000) == '1.0 KB'
-    assert client._format_size(10100) == '10.1 KB'
-    assert client._format_size(1200000) == '1.2 MB'
-    assert client._format_size(100300000) == '100.3 MB'
-    assert client._format_size(1400000000) == '1.4 GB'
-    assert client._format_size(1500000000000) == '1.5 TB'
-    assert client._format_size(1600000000000000) == '1.6 PB'
+    assert PrettyPachydermClient._format_size(0) == '0 bytes'
+    assert PrettyPachydermClient._format_size(1) == '1 byte'
+    assert PrettyPachydermClient._format_size(1000) == '1.0 KB'
+    assert PrettyPachydermClient._format_size(10100) == '10.1 KB'
+    assert PrettyPachydermClient._format_size(1200000) == '1.2 MB'
+    assert PrettyPachydermClient._format_size(100300000) == '100.3 MB'
+    assert PrettyPachydermClient._format_size(1400000000) == '1.4 GB'
+    assert PrettyPachydermClient._format_size(1500000000000) == '1.5 TB'
+    assert PrettyPachydermClient._format_size(1600000000000000) == '1.6 PB'
