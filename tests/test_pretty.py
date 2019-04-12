@@ -105,7 +105,6 @@ def test_inspect_datum(pretty_client: PrettyPachydermClient, **mocks):
 
 
 def test_pipeline_sort_key():
-    from pachypy.pretty import PrettyPachydermClient
     assert PrettyPachydermClient._calc_pipeline_sort_key({'a': [], 'b': ['a']}) == {'a': 'a/0', 'b': 'a/1'}
     assert PrettyPachydermClient._calc_pipeline_sort_key({'b': [], 'a': ['b']}) == {'b': 'a/0', 'a': 'a/1'}
     assert PrettyPachydermClient._calc_pipeline_sort_key({'a': [], 'b': [], 'c': ['a', 'b'], 'd': []}) == {'a': 'a/0', 'b': 'a/0', 'c': 'a/1', 'd': 'd/0'}
