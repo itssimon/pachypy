@@ -419,6 +419,7 @@ class PrettyPachydermClient(PachydermClient):
             'unknown': _fa('question') + s,
             'starting': _fa('spinner') + s,
             'running': _fa('running') + s,
+            'merging': _fa('compress-arrows-alt') + s,
             'success': _fa('check') + s,
             'failure': _fa('bolt') + s,
             'killed': _fa('skull-crossbones') + s,
@@ -452,6 +453,7 @@ class PrettyPachydermClient(PachydermClient):
         color = {
             'starting': 'orange',
             'running': 'orange',
+            'merging': 'orange',
             'success': 'green',
             'failure': 'red',
             'killed': 'red',
