@@ -49,7 +49,8 @@ def pipeline_2(adapter: PachydermAdapter):
         'input': {
             'cron': {
                 'name': 'tick',
-                'spec': '0 * * * *'
+                'spec': '0 * * * *',
+                'start': '2050-01-01T00:00:00Z'
             }
         },
         'enable_stats': True
