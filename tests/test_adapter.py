@@ -201,6 +201,35 @@ def await_job_completed_state(adapter: PachydermAdapter, pipeline_name, timeout=
     return state
 
 
+def test_retry(adapter: PachydermAdapter):
+    from grpc._channel import _Rendezvous
+    from pachypy.adapter import retry
+    state = mock.MagicMock()
+    code = mock.MagicMock()
+    type(code).value = mock.PropertyMock(return_value=(None, 'unavailable'))
+    type(state).code = mock.PropertyMock(return_value=code)
+    func = mock.MagicMock(side_effect=_Rendezvous(
+        state=state,
+        call=mock.MagicMock(),
+        response_deserializer=mock.MagicMock(),
+        deadline=mock.MagicMock(),
+    ))
+    adapter._max_retries = 3
+    with mock.patch('pachypy.adapter.PachydermAdapter.list_repos', func):
+        with mock.patch('pachypy.adapter.PachydermAdapter.check_connectivity', mock.MagicMock(return_value=True)):
+            with pytest.raises(PachydermError):
+                retry(adapter.list_repos)(adapter)  # type: ignore
+            assert adapter._retries == adapter._max_retries
+            assert func.call_count == adapter._max_retries + 1
+        func.reset_mock()
+        adapter._retries = 0
+        with mock.patch('pachypy.adapter.PachydermAdapter.check_connectivity', mock.MagicMock(return_value=False)):
+            with pytest.raises(PachydermError):
+                retry(adapter.list_repos)(adapter)  # type: ignore
+            assert adapter._retries == 0
+            assert func.call_count == 1
+
+
 def test_init(monkeypatch):
     monkeypatch.delenv('PACHD_ADDRESS', raising=False)
     adapter = PachydermAdapter()
