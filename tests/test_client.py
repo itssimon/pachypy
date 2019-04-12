@@ -50,6 +50,7 @@ def mock_get_logs(_, pipeline=None, **kwargs):
 
 
 def mock_inspect(_, **kwargs):
+    del kwargs
     return {'key': 'value'}
 
 
