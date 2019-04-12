@@ -24,7 +24,7 @@ from python_pachyderm.client.pps.pps_pb2 import (
     CreatePipelineRequest, DeletePipelineRequest, StartPipelineRequest, StopPipelineRequest,
     InspectPipelineRequest, InspectJobRequest, InspectDatumRequest,
     FAILED as DATUM_FAILED, SUCCESS as DATUM_SUCCESS, SKIPPED as DATUM_SKIPPED, STARTING as DATUM_STARTING,
-    JOB_STARTING, JOB_RUNNING, JOB_FAILURE, JOB_SUCCESS, JOB_KILLED, JOB_MERGING,
+    JOB_STARTING, JOB_RUNNING, JOB_MERGING, JOB_SUCCESS, JOB_FAILURE, JOB_KILLED,
     PIPELINE_STARTING, PIPELINE_RUNNING, PIPELINE_RESTARTING, PIPELINE_FAILURE, PIPELINE_PAUSED, PIPELINE_STANDBY,
 )
 from python_pachyderm.client.pps.pps_pb2_grpc import APIStub as PpsAPIStub
@@ -64,6 +64,26 @@ job_state_mapping = {
     'JOB_FAILURE': 'failure',
     'JOB_SUCCESS': 'success',
     'JOB_KILLED': 'killed',
+}
+
+datum_state_mapping = {
+    DATUM_FAILED: 'failed',
+    DATUM_SUCCESS: 'success',
+    DATUM_SKIPPED: 'skipped',
+    DATUM_STARTING: 'starting',
+    'FAILED': 'failed',
+    'SUCCESS': 'success',
+    'SKIPPED': 'skipped',
+    'STARTING': 'starting',
+}
+
+file_type_mapping = {
+    FILETYPE_RESERVED: 'reserved',
+    FILETYPE_FILE: 'file',
+    FILETYPE_DIR: 'dir',
+    'RESERVED': 'reserved',
+    'FILE': 'file',
+    'DIR': 'dir',
 }
 
 
@@ -203,11 +223,6 @@ class PachydermAdapter:
     def list_files(self, repo: str, branch: Optional[str] = 'master', commit: Optional[str] = None, glob: str = '**') -> pd.DataFrame:
         if branch is None and commit is None:
             raise ValueError('branch and commit cannot both be None')
-        file_type_mapping = {
-            FILETYPE_RESERVED: 'reserved',
-            FILETYPE_FILE: 'file',
-            FILETYPE_DIR: 'dir',
-        }
         res = []
         branch_heads = self.list_branch_heads(repo)
         commit_branches = invert_dict(branch_heads)
@@ -345,12 +360,6 @@ class PachydermAdapter:
 
     @retry
     def list_datums(self, job: str) -> pd.DataFrame:
-        state_mapping = {
-            DATUM_FAILED: 'failed',
-            DATUM_SUCCESS: 'success',
-            DATUM_SKIPPED: 'skipped',
-            DATUM_STARTING: 'starting',
-        }
         file_type_mapping = {
             FILETYPE_RESERVED: 'reserved',
             FILETYPE_FILE: 'file',
@@ -363,7 +372,7 @@ class PachydermAdapter:
                 res.append({
                     'job': datum.datum_info.datum.job.id,
                     'datum': datum.datum_info.datum.id,
-                    'state': state_mapping.get(datum.datum_info.state, 'unknown'),
+                    'state': datum_state_mapping.get(datum.datum_info.state, 'unknown'),
                     'repo': data.file.commit.repo.name,
                     'commit': data.file.commit.id,
                     'path': data.file.path,
@@ -441,7 +450,16 @@ class PachydermAdapter:
     @retry
     def inspect_datum(self, job: str, datum: str) -> Dict[str, Any]:
         res = self.pps_stub.InspectDatum(InspectDatumRequest(datum=Datum(id=datum, job=Job(id=job))))
-        return dict(json.loads(MessageToJson(res)))
+        info = dict(json.loads(MessageToJson(res)))
+        info['state'] = datum_state_mapping[info['state']]
+        if 'stats' in info:
+            for k in ['downloadTime', 'processTime', 'uploadTime']:
+                if k in info['stats']:
+                    info['stats'][k] = float(info['stats'][k][:-1])
+        for file in info['data']:
+            file['committed'] = pd.to_datetime(file['committed']).to_pydatetime(warn=False)
+            file['fileType'] = file_type_mapping[file['fileType']]
+        return info
 
     @retry
     def create_pipeline(self, pipeline_spec: dict) -> None:
