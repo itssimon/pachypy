@@ -59,20 +59,32 @@ def mock_get_file(_, repo, path, **kwargs):
         yield b'st'
 
 
-def patch_adapter():
+def wrap_mock(func, empty=False):
+    def wrap(*args, **kwargs):
+        res = func(*args, **kwargs)
+        if empty:
+            if isinstance(res, pd.DataFrame):
+                res = res.head(0)
+            elif isinstance(res, list):
+                res = []
+        return res
+    return wrap
+
+
+def patch_adapter(empty=False):
     return patch.multiple(
         'pachypy.adapter.PachydermAdapter',
         get_version=lambda _: '1.8.6',
-        list_repos=lambda _: get_mock_from_csv('list_repos.csv', datetime_cols=['created']),
+        list_repos=wrap_mock(lambda _: get_mock_from_csv('list_repos.csv', datetime_cols=['created']), empty),
         list_repo_names=lambda _: get_mock_from_csv('list_repos.csv')['repo'].tolist(),
-        list_commits=mock_list_commits,
+        list_commits=wrap_mock(mock_list_commits, empty),
         list_branch_heads=mock_list_branch_heads,
-        list_files=mock_list_files,
-        list_pipelines=lambda _: get_mock_from_csv('list_pipelines.csv', datetime_cols=['created']),
+        list_files=wrap_mock(mock_list_files, empty),
+        list_pipelines=wrap_mock(lambda _: get_mock_from_csv('list_pipelines.csv', datetime_cols=['created']), empty),
         list_pipeline_names=lambda _: get_mock_from_csv('list_pipelines.csv')['pipeline'].tolist(),
-        list_jobs=mock_list_jobs,
-        list_datums=mock_list_datums,
-        get_logs=mock_get_logs,
+        list_jobs=wrap_mock(mock_list_jobs, empty),
+        list_datums=wrap_mock(mock_list_datums, empty),
+        get_logs=wrap_mock(mock_get_logs, empty),
         get_file=mock_get_file,
         create_repo=DEFAULT,
         delete_repo=DEFAULT,

@@ -9,61 +9,75 @@ def pretty_client():
     return PrettyPachydermClient()
 
 
-@patch_adapter()
-def test_list_repos(pretty_client, **mocks):
-    del mocks
-    html = pretty_client.list_repos()
-    assert 'use.fontawesome.com' in html.data
-    assert '<table' in html.data and html.data.count('<tr') == 7
+def test_list_repos(pretty_client):
+    with patch_adapter():
+        html = pretty_client.list_repos()
+        assert 'use.fontawesome.com' in html.data
+        assert '<table' in html.data and html.data.count('<tr') == 7
+    with patch_adapter(empty=True):
+        html = pretty_client.list_repos()
+        assert '<table' in html.data and html.data.count('<tr') == 1
 
 
-@patch_adapter()
-def test_list_commits(pretty_client, **mocks):
-    del mocks
-    html = pretty_client.list_commits('test_x_pipeline_3')
-    assert 'use.fontawesome.com' in html.data
-    assert '<table' in html.data and html.data.count('<tr') == 11
+def test_list_commits(pretty_client):
+    with patch_adapter():
+        html = pretty_client.list_commits('test_x_pipeline_3')
+        assert 'use.fontawesome.com' in html.data
+        assert '<table' in html.data and html.data.count('<tr') == 11
+    with patch_adapter(empty=True):
+        html = pretty_client.list_commits('test_x_pipeline_3')
+        assert '<table' in html.data and html.data.count('<tr') == 1
 
 
-@patch_adapter()
-def test_list_files(pretty_client, **mocks):
-    del mocks
-    html = pretty_client.list_files('test_x_pipeline_3', files_only=False)
-    assert 'use.fontawesome.com' in html.data
-    assert '<table' in html.data and html.data.count('<tr') == 8
+def test_list_files(pretty_client):
+    with patch_adapter():
+        html = pretty_client.list_files('test_x_pipeline_3', files_only=False)
+        assert 'use.fontawesome.com' in html.data
+        assert '<table' in html.data and html.data.count('<tr') == 8
+    with patch_adapter(empty=True):
+        html = pretty_client.list_files('test_x_pipeline_3', files_only=False)
+        assert '<table' in html.data and html.data.count('<tr') == 1
 
 
-@patch_adapter()
-def test_list_pipelines(pretty_client, **mocks):
-    del mocks
-    html = pretty_client.list_pipelines()
-    assert 'use.fontawesome.com' in html.data
-    assert '<table' in html.data and html.data.count('<tr') == 6
+def test_list_pipelines(pretty_client):
+    with patch_adapter():
+        html = pretty_client.list_pipelines()
+        assert 'use.fontawesome.com' in html.data
+        assert '<table' in html.data and html.data.count('<tr') == 6
+    with patch_adapter(empty=True):
+        html = pretty_client.list_pipelines()
+        assert '<table' in html.data and html.data.count('<tr') == 1
 
 
-@patch_adapter()
-def test_list_jobs(pretty_client, **mocks):
-    del mocks
-    html = pretty_client.list_jobs()
-    assert 'use.fontawesome.com' in html.data
-    assert '<table' in html.data and html.data.count('<tr') == 9
+def test_list_jobs(pretty_client):
+    with patch_adapter():
+        html = pretty_client.list_jobs()
+        assert 'use.fontawesome.com' in html.data
+        assert '<table' in html.data and html.data.count('<tr') == 9
+    with patch_adapter(empty=True):
+        html = pretty_client.list_jobs()
+        assert '<table' in html.data and html.data.count('<tr') == 1
 
 
-@patch_adapter()
-def test_list_datums(pretty_client, **mocks):
-    del mocks
-    html = pretty_client.list_datums('e26ccf65131b4b3d9087cebc2f944279')
-    assert 'use.fontawesome.com' in html.data
-    assert '<table' in html.data and html.data.count('<tr') == 11
+def test_list_datums(pretty_client):
+    with patch_adapter():
+        html = pretty_client.list_datums('e26ccf65131b4b3d9087cebc2f944279')
+        assert 'use.fontawesome.com' in html.data
+        assert '<table' in html.data and html.data.count('<tr') == 11
+    with patch_adapter(empty=True):
+        html = pretty_client.list_datums('e26ccf65131b4b3d9087cebc2f944279')
+        assert '<table' in html.data and html.data.count('<tr') == 1
 
 
-@patch_adapter()
-def test_get_logs(pretty_client, capsys, **mocks):
-    del mocks
-    pretty_client.get_logs('test_x_pipeline_5', last_job_only=False)
-    output = capsys.readouterr().out
-    assert output.count('\n') == 25
-    assert output.count(' | Job ') == 2
+def test_get_logs(pretty_client, capsys):
+    with patch_adapter():
+        pretty_client.get_logs('test_x_pipeline_5', last_job_only=False)
+        output = capsys.readouterr().out
+        assert output.count('\n') == 25
+        assert output.count(' | Job ') == 2
+    with patch_adapter(empty=True):
+        pretty_client.get_logs('test_x_pipeline_5', last_job_only=False)
+        assert output.count('\n') == 25
 
 
 def test_pipeline_sort_key():
