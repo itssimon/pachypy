@@ -49,6 +49,10 @@ def mock_get_logs(_, pipeline=None, **kwargs):
     return df[df['pipeline'] == pipeline] if pipeline is not None else df
 
 
+def mock_inspect(_, **kwargs):
+    return {'key': 'value'}
+
+
 def mock_get_file(_, repo, path, **kwargs):
     del repo, kwargs
     if 'random' in path:
@@ -86,6 +90,9 @@ def patch_adapter(empty=False):
         list_datums=wrap_mock(mock_list_datums, empty),
         get_logs=wrap_mock(mock_get_logs, empty),
         get_file=mock_get_file,
+        inspect_pipeline=mock_inspect,
+        inspect_job=mock_inspect,
+        inspect_datum=mock_inspect,
         create_repo=DEFAULT,
         delete_repo=DEFAULT,
         create_branch=DEFAULT,

@@ -1,15 +1,15 @@
 import pytest
 
+from pachypy.pretty import PrettyPachydermClient
 from test_client import patch_adapter
 
 
 @pytest.fixture(scope='module')
 def pretty_client():
-    from pachypy.pretty import PrettyPachydermClient
     return PrettyPachydermClient()
 
 
-def test_list_repos(pretty_client):
+def test_list_repos(pretty_client: PrettyPachydermClient):
     with patch_adapter():
         html = pretty_client.list_repos()
         assert 'use.fontawesome.com' in html.data
@@ -19,7 +19,7 @@ def test_list_repos(pretty_client):
         assert '<table' in html.data and html.data.count('<tr') == 1
 
 
-def test_list_commits(pretty_client):
+def test_list_commits(pretty_client: PrettyPachydermClient):
     with patch_adapter():
         html = pretty_client.list_commits('test_x_pipeline_3')
         assert 'use.fontawesome.com' in html.data
@@ -29,7 +29,7 @@ def test_list_commits(pretty_client):
         assert '<table' in html.data and html.data.count('<tr') == 1
 
 
-def test_list_files(pretty_client):
+def test_list_files(pretty_client: PrettyPachydermClient):
     with patch_adapter():
         html = pretty_client.list_files('test_x_pipeline_3', files_only=False)
         assert 'use.fontawesome.com' in html.data
@@ -39,7 +39,7 @@ def test_list_files(pretty_client):
         assert '<table' in html.data and html.data.count('<tr') == 1
 
 
-def test_list_pipelines(pretty_client):
+def test_list_pipelines(pretty_client: PrettyPachydermClient):
     with patch_adapter():
         html = pretty_client.list_pipelines()
         assert 'use.fontawesome.com' in html.data
@@ -49,7 +49,7 @@ def test_list_pipelines(pretty_client):
         assert '<table' in html.data and html.data.count('<tr') == 1
 
 
-def test_list_jobs(pretty_client):
+def test_list_jobs(pretty_client: PrettyPachydermClient):
     with patch_adapter():
         html = pretty_client.list_jobs()
         assert 'use.fontawesome.com' in html.data
@@ -59,7 +59,7 @@ def test_list_jobs(pretty_client):
         assert '<table' in html.data and html.data.count('<tr') == 1
 
 
-def test_list_datums(pretty_client):
+def test_list_datums(pretty_client: PrettyPachydermClient):
     with patch_adapter():
         html = pretty_client.list_datums('e26ccf65131b4b3d9087cebc2f944279')
         assert 'use.fontawesome.com' in html.data
@@ -69,7 +69,7 @@ def test_list_datums(pretty_client):
         assert '<table' in html.data and html.data.count('<tr') == 1
 
 
-def test_get_logs(pretty_client, capsys):
+def test_get_logs(pretty_client: PrettyPachydermClient, capsys):
     with patch_adapter():
         pretty_client.get_logs('test_x_pipeline_5', last_job_only=False)
         output = capsys.readouterr().out
@@ -78,6 +78,30 @@ def test_get_logs(pretty_client, capsys):
     with patch_adapter(empty=True):
         pretty_client.get_logs('test_x_pipeline_5', last_job_only=False)
         assert output.count('\n') == 25
+
+
+@patch_adapter()
+def test_inspect_pipeline(pretty_client: PrettyPachydermClient, **mocks):
+    del mocks
+    html = pretty_client.inspect_pipeline('pipeline')
+    assert '<pre' in html.data
+    assert isinstance(html.raw, dict)
+
+
+@patch_adapter()
+def test_inspect_job(pretty_client: PrettyPachydermClient, **mocks):
+    del mocks
+    html = pretty_client.inspect_job('abcd1234')
+    assert '<pre' in html.data
+    assert isinstance(html.raw, dict)
+
+
+@patch_adapter()
+def test_inspect_datum(pretty_client: PrettyPachydermClient, **mocks):
+    del mocks
+    html = pretty_client.inspect_datum('abcd1234', 'abcdefgh12345678')
+    assert '<pre' in html.data
+    assert isinstance(html.raw, dict)
 
 
 def test_pipeline_sort_key():

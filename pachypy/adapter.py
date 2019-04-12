@@ -421,8 +421,10 @@ class PachydermAdapter:
         for k in ['createdAt']:
             if k in info:
                 info[k] = pd.to_datetime(info[k]).to_pydatetime(warn=False)
-        info['input'] = self._transform_cron_start(info['input'], lambda x: pd.to_datetime(x).to_pydatetime(warn=False))
-        info['state'] = pipeline_state_mapping[info['state']]
+        if 'input' in info:
+            info['input'] = self._transform_cron_start(info['input'], lambda x: pd.to_datetime(x).to_pydatetime(warn=False))
+        if 'state' in info:
+            info['state'] = pipeline_state_mapping[info['state']]
         if 'jobCounts' in info:
             info['jobCounts'] = {job_state_mapping[int(k)]: v for k, v in info['jobCounts'].items()}
         if 'lastJobState' in info:
@@ -439,8 +441,10 @@ class PachydermAdapter:
         for k in ['started', 'finished']:
             if k in info:
                 info[k] = pd.to_datetime(info[k]).to_pydatetime(warn=False)
-        info['input'] = self._transform_cron_start(info['input'], lambda x: pd.to_datetime(x).to_pydatetime(warn=False))
-        info['state'] = job_state_mapping[info['state']]
+        if 'input' in info:
+            info['input'] = self._transform_cron_start(info['input'], lambda x: pd.to_datetime(x).to_pydatetime(warn=False))
+        if 'state' in info:
+            info['state'] = job_state_mapping[info['state']]
         if 'stats' in info:
             for k in ['downloadTime', 'processTime', 'uploadTime']:
                 if k in info['stats']:
@@ -451,7 +455,8 @@ class PachydermAdapter:
     def inspect_datum(self, job: str, datum: str) -> Dict[str, Any]:
         res = self.pps_stub.InspectDatum(InspectDatumRequest(datum=Datum(id=datum, job=Job(id=job))))
         info = dict(json.loads(MessageToJson(res)))
-        info['state'] = datum_state_mapping[info['state']]
+        if 'state' in info:
+            info['state'] = datum_state_mapping[info['state']]
         if 'stats' in info:
             for k in ['downloadTime', 'processTime', 'uploadTime']:
                 if k in info['stats']:

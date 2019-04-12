@@ -51,7 +51,8 @@ def pipeline_2(adapter: PachydermAdapter):
                 'name': 'tick',
                 'spec': '0 * * * *'
             }
-        }
+        },
+        'enable_stats': True
     })
 
 
@@ -454,11 +455,22 @@ def test_list_jobs_get_logs(adapter: PachydermAdapter, pipeline_2):
     assert jobs['data_processed'].iloc[0] == jobs['data_total'].iloc[0] == 1
     assert jobs['data_skipped'].iloc[0] == 0
 
+    job_info = adapter.inspect_job(job)
+    assert job_info['job']['id'] == job
+    assert job_info['pipeline']['name'] == pipeline_name
+    assert job_info['state'] == 'success'
+    assert job_info['dataTotal'] > 0
+
     datums = adapter.list_datums(job=job)
     assert len(datums) == 1
     assert datums['job'].iloc[0] == job
     assert datums['repo'].iloc[0] == tick_repo_name
     assert datums['size_bytes'].iloc[0] > 0
+
+    datum_info = adapter.inspect_datum(job=job, datum=datums['datum'].iloc[0])
+    assert datum_info['datum']['job']['id'] == job
+    assert datum_info['state'] == 'success'
+    assert datum_info['stats']['processTime'] > 0
 
     logs = adapter.get_logs(pipeline=pipeline_name)
     logs = logs[logs['user']]
@@ -482,3 +494,10 @@ def test_get_file(adapter: PachydermAdapter, repo):
 def test_pipeline_input_cron_specs(adapter: PachydermAdapter, pipeline_5, pipeline_6):
     assert len(adapter.get_pipeline_cron_specs(pipeline_5['pipeline']['name'])) == 0
     assert len(adapter.get_pipeline_cron_specs(pipeline_6['pipeline']['name'])) == 2
+
+
+def test_inspect_pipeline(adapter: PachydermAdapter, pipeline_5):
+    info = adapter.inspect_pipeline(pipeline_5['pipeline']['name'])
+    assert info['pipeline']['name'] == pipeline_5['pipeline']['name']
+    assert info['version'] == 1
+    assert info['createdAt'].tzinfo is not None
