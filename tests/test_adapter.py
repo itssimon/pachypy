@@ -159,13 +159,6 @@ def pipeline(adapter: PachydermAdapter, pipeline_spec):
     delete_pipeline_if_exists(adapter, pipeline_name)
 
 
-def skip_if_pachyderm_unavailable(adapter: PachydermAdapter):
-    if adapter._connectable is None:
-        adapter.check_connectivity()
-    if not adapter._connectable:
-        pytest.skip('Pachyderm cluster is not available')
-
-
 def delete_repo_if_exists(adapter: PachydermAdapter, repo_name):
     try:
         adapter.delete_repo(repo_name)
@@ -257,7 +250,6 @@ def test_get_version(adapter: PachydermAdapter):
 
 
 def test_create_delete_repo(adapter: PachydermAdapter):
-    skip_if_pachyderm_unavailable(adapter)
     repo_name = 'test_repo_a1b2c'
     delete_repo_if_exists(adapter, repo_name)
 
@@ -270,7 +262,6 @@ def test_create_delete_repo(adapter: PachydermAdapter):
 
 
 def test_create_update_delete_pipeline(adapter, pipeline_1):
-    skip_if_pachyderm_unavailable(adapter)
     pipeline_name = pipeline_1['pipeline']['name']
 
     pipelines = adapter.list_pipelines()
@@ -295,7 +286,6 @@ def test_create_update_delete_pipeline(adapter, pipeline_1):
 
 
 def test_list_pipelines(adapter: PachydermAdapter, pipeline_1, pipeline_2, pipeline_3, pipeline_4):
-    skip_if_pachyderm_unavailable(adapter)
     df = adapter.list_pipelines()
     assert df.shape[0] >= 4
     assert df.shape[1] == 15
@@ -313,8 +303,6 @@ def test_list_pipelines(adapter: PachydermAdapter, pipeline_1, pipeline_2, pipel
 
 
 def test_stop_start_pipeline(adapter: PachydermAdapter, pipeline_1):
-    skip_if_pachyderm_unavailable(adapter)
-
     pipeline_name = pipeline_1['pipeline']['name']
     assert await_pipeline_new_state(adapter, pipeline_name, initial_state='starting') == 'running'
 
@@ -326,8 +314,6 @@ def test_stop_start_pipeline(adapter: PachydermAdapter, pipeline_1):
 
 
 def test_commit_context_manager(adapter: PachydermAdapter, repo):
-    skip_if_pachyderm_unavailable(adapter)
-
     c = PachydermCommitAdapter(adapter, repo)
     assert c.commit is None and c.finished is False
     assert len(adapter.list_commits(repo)) == 0
@@ -348,8 +334,6 @@ def test_commit_context_manager(adapter: PachydermAdapter, repo):
 
 
 def test_commit_put_file_bytes(adapter: PachydermAdapter, repo):
-    skip_if_pachyderm_unavailable(adapter)
-
     with PachydermCommitAdapter(adapter, repo) as c:
         c.put_file_bytes('test_1', '/test_file_1')
         c.put_file_bytes('test_2', '/folder/test_file_2')
@@ -387,7 +371,6 @@ def test_commit_put_file_bytes(adapter: PachydermAdapter, repo):
 
 
 def test_commit_create_branch(adapter: PachydermAdapter, repo):
-    skip_if_pachyderm_unavailable(adapter)
     with PachydermCommitAdapter(adapter, repo) as c:
         c.create_branch('test_branch_1')
     adapter.create_branch(repo, c.commit, 'test_branch_2')
@@ -398,7 +381,6 @@ def test_commit_create_branch(adapter: PachydermAdapter, repo):
 
 
 def test_commit_put_file_url(adapter: PachydermAdapter, repo):
-    skip_if_pachyderm_unavailable(adapter)
     with PachydermCommitAdapter(adapter, repo, branch=None) as c:
         c.put_file_url('https://raw.githubusercontent.com/itssimon/pachypy/master/tests/mock/get_logs.csv', 'get_logs.csv')
     files = adapter.list_files(repo, commit=c.commit)
@@ -410,7 +392,6 @@ def test_commit_put_file_url(adapter: PachydermAdapter, repo):
 
 
 def test_commit_flush(adapter: PachydermAdapter, pipeline_5):
-    skip_if_pachyderm_unavailable(adapter)
     pipeline = pipeline_5['pipeline']['name']
     repo = pipeline_5['input']['pfs']['repo']
     assert await_pipeline_new_state(adapter, pipeline) == 'running'
@@ -424,8 +405,6 @@ def test_commit_flush(adapter: PachydermAdapter, pipeline_5):
 
 
 def test_list_commits_files(adapter: PachydermAdapter, repo):
-    skip_if_pachyderm_unavailable(adapter)
-
     assert len(adapter.list_branch_heads(repo)) == 0
     assert len(adapter.list_files(repo)) == 0
 
@@ -460,8 +439,6 @@ def test_list_commits_files(adapter: PachydermAdapter, repo):
 
 
 def test_list_jobs_get_logs(adapter: PachydermAdapter, pipeline_2):
-    skip_if_pachyderm_unavailable(adapter)
-
     pipeline_name = pipeline_2['pipeline']['name']
     tick_repo_name = pipeline_name + '_' + pipeline_2['input']['cron']['name']
     assert await_pipeline_new_state(adapter, pipeline_name, initial_state='starting') == 'running'
@@ -493,7 +470,6 @@ def test_list_jobs_get_logs(adapter: PachydermAdapter, pipeline_2):
 
 
 def test_get_file(adapter: PachydermAdapter, repo):
-    skip_if_pachyderm_unavailable(adapter)
     with PachydermCommitAdapter(adapter, repo) as c:
         c.put_file_bytes(b'123', '/test_file_1')
     with PachydermCommitAdapter(adapter, repo, branch='test') as c:
