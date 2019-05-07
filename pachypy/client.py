@@ -708,12 +708,16 @@ class PachydermClient:
             with tempfile.SpooledTemporaryFile(max_size=1000 ** 2) as tmp:
                 with tarfile.open(fileobj=tmp, mode='w') as tar:
                     dockerfile = io.BytesIO(pipeline_spec['transform']['dockerfile'].encode('utf-8'))
-                    tar.addfile(tarfile.TarInfo(name='Dockerfile'), fileobj=dockerfile)
+                    dockerfile_info = tarfile.TarInfo(name='Dockerfile')
+                    dockerfile_info.size = len(dockerfile.getvalue())
+                    tar.addfile(dockerfile_info, fileobj=dockerfile)
                     if 'docker_build_context' in pipeline_spec['transform']:
                         for path in pipeline_spec['transform']['docker_build_context']:
-                            tar.add(path)
-                    self.logger.info(f"Building Docker image '{image}' ...")
-                    build_stream = self.docker_client.api.build(fileobj=tar, tag=image, decode=True, custom_context=True, **build_options)
+                            tar.add(path, arcname=os.path.basename(path))
+                tmp.flush()
+                tmp.seek(0)
+                self.logger.info(f"Building Docker image '{image}' ...")
+                build_stream = self.docker_client.api.build(fileobj=tmp, tag=image, decode=True, custom_context=True, **build_options)
         else:
             return
 
