@@ -482,8 +482,12 @@ class PrettyPachydermClient(PachydermClient):
         return [css_bar(x) if not pd.isna(x) and x < 100 else '' for x in s]
 
     @classmethod
-    def _progress(cls, x, n=None, **kwargs):
-        n = n or len(x)
+    def _progress(cls, x, n: Optional[int] = None, **kwargs):
+        if n is None:
+            try:
+                n = len(x)
+            except TypeError:
+                return x
         if 'leave' not in kwargs:
             kwargs['leave'] = False
         return tqdm_notebook(x, **kwargs) if n > 2 else x
