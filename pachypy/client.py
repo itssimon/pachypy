@@ -7,6 +7,8 @@ import json
 import logging
 import os
 import re
+import tarfile
+import tempfile
 from collections import namedtuple
 from datetime import datetime, tzinfo
 from pathlib import Path
@@ -697,16 +699,24 @@ class PachydermClient:
         default_build_options = {'rm': True}
         pipeline_build_options = pipeline_spec['transform'].get('docker_build_options', {})
         build_options = {**default_build_options, **pipeline_build_options, **(build_options or {})}
+
         if 'dockerfile_path' in pipeline_spec['transform']:
             dockerfile_path = pipeline_spec['transform']['dockerfile_path']
             self.logger.info(f"Building Docker image '{image}' from '{dockerfile_path}' ...")
             build_stream = self.docker_client.api.build(path=str(dockerfile_path), tag=image, decode=True, **build_options)
         elif 'dockerfile' in pipeline_spec['transform']:
-            dockerfile = io.BytesIO(pipeline_spec['transform']['dockerfile'].encode('utf-8'))
-            self.logger.info(f"Building Docker image '{image}' ...")
-            build_stream = self.docker_client.api.build(fileobj=dockerfile, tag=image, decode=True, **build_options)
+            with tempfile.SpooledTemporaryFile(max_size=1000 ** 2) as tmp:
+                with tarfile.open(fileobj=tmp, mode='w') as tar:
+                    dockerfile = io.BytesIO(pipeline_spec['transform']['dockerfile'].encode('utf-8'))
+                    tar.addfile(tarfile.TarInfo(name='Dockerfile'), fileobj=dockerfile)
+                    if 'docker_build_context' in pipeline_spec['transform']:
+                        for path in pipeline_spec['transform']['docker_build_context']:
+                            tar.add(path)
+                    self.logger.info(f"Building Docker image '{image}' ...")
+                    build_stream = self.docker_client.api.build(fileobj=tar, tag=image, decode=True, custom_context=True, **build_options)
         else:
             return
+
         for chunk in build_stream:
             if 'error' in chunk:
                 raise DockerError(chunk['error'])
@@ -715,6 +725,7 @@ class PachydermClient:
                 if msg:
                     self.logger.debug(msg)
         self._built_images.add(image)
+        
         if push:
             registry_adapter = self._get_registry_adapter(image)
             digest = registry_adapter.push_image(image)
@@ -745,6 +756,14 @@ class PachydermClient:
                 if not path.is_dir() and path.name.lower() == 'dockerfile':
                     path = path.parent
                 pipeline['transform']['dockerfile_path'] = path.resolve()
+            if 'docker_build_context' in pipeline['transform']:
+                paths = []
+                for p in pipeline['transform']['docker_build_context']:
+                    path = Path(p)
+                    if not path.is_absolute():
+                        path = pipeline['_file'].parent / path
+                    paths.append(path.resolve())
+                pipeline['transform']['docker_build_context'] = paths
         return pipeline_specs
 
     def _get_registry_adapter(self, image: str) -> DockerRegistryAdapter:

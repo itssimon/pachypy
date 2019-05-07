@@ -7,13 +7,18 @@
     # because pachypy can automatically add the latest digest (@sha256:xxxx) instead,
     # which will cause Kubernetes to pull the latest image from the registry
     image: registry_host.net/custom_pipeline_image:some_tag
-    # You can define your image right here if you don't need a build context
+    # You can define your image right here
     dockerfile: |
       FROM alpine:latest
       WORKDIR /root
       RUN apt-get -qq update && \
         apt-get -y --no-install-recommends install wget
       RUN wget http://example.com/some_script.sh
+      COPY other_script.sh ./
+    # ... and define your build context without having to move files
+    docker_build_context:
+    - ../some/path/to/other_script.sh
+    - ../some/path/to/folder
     # The following options are passed into the Docker build() function if specified
     # See https://docker-py.readthedocs.io/en/stable/images.html#docker.models.images.ImageCollection.build
     docker_build_options:
