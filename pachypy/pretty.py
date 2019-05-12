@@ -296,6 +296,10 @@ class PrettyPachydermClient(PachydermClient):
             job = row.job
             worker = row.worker
 
+    def inspect_repo(self, repo: str) -> PrettyYAML:
+        info = super().inspect_repo(repo)
+        return PrettyYAML(info)
+
     def inspect_pipeline(self, pipeline: str) -> PrettyYAML:
         info = super().inspect_pipeline(pipeline)
         return PrettyYAML(info)

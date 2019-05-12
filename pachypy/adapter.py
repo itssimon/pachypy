@@ -9,11 +9,11 @@ from google.protobuf.json_format import MessageToJson
 from google.protobuf.timestamp_pb2 import Timestamp
 from python_pachyderm.client.pfs.pfs_pb2 import (
     Repo, Commit, Branch, File,
-    ListRepoRequest, ListCommitRequest, ListBranchRequest, GlobFileRequest, GetFileRequest,
+    ListRepoRequest, InspectRepoRequest, ListCommitRequest, ListBranchRequest, GlobFileRequest,
     CreateRepoRequest, DeleteRepoRequest,
     CreateBranchRequest, DeleteBranchRequest,
     StartCommitRequest, FinishCommitRequest, DeleteCommitRequest, FlushCommitRequest,
-    PutFileRequest, DeleteFileRequest,
+    GetFileRequest, PutFileRequest, DeleteFileRequest,
     RESERVED as FILETYPE_RESERVED, FILE as FILETYPE_FILE, DIR as FILETYPE_DIR,
     NONE as DELIMITER_NONE, JSON as DELIMITER_JSON, LINE as DELIMITER_LINE, SQL as DELIMITER_SQL, CSV as DELIMITER_CSV
 )
@@ -410,6 +410,18 @@ class PachydermAdapter:
             'ts': 'datetime64[ns, UTC]',
             'user': 'bool',
         })
+
+    @retry
+    def inspect_repo(self, repo: str) -> Dict[str, Any]:
+        res = self.pfs_stub.InspectRepo(InspectRepoRequest(repo=Repo(name=repo)))
+        info = dict(json.loads(MessageToJson(res)))
+        for k in ['created']:
+            if k in info:
+                info[k] = pd.to_datetime(info[k]).to_pydatetime(warn=False)
+        for k in ['sizeBytes']:
+            if k in info:
+                info[k] = int(info[k])
+        return info
 
     @retry
     def inspect_pipeline(self, pipeline: str) -> Dict[str, Any]:

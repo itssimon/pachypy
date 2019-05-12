@@ -329,6 +329,14 @@ class PachydermClient:
         df = df.sort_values(['worker_ts_min', 'job', 'worker', 'ts', 'index'], ascending=True).reset_index(drop=True)
         return df[['ts', 'job', 'pipeline', 'worker', 'datum', 'message', 'user']]
 
+    def inspect_repo(self, repo: str) -> Dict[str, Any]:
+        """Returns info about a repo.
+
+        Args:
+            repo: Name of repo to get info for.
+        """
+        return self.adapter.inspect_repo(repo=repo)
+
     def inspect_pipeline(self, pipeline: str) -> Dict[str, Any]:
         """Returns info about a pipeline.
 
