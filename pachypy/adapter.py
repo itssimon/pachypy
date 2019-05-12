@@ -384,13 +384,13 @@ class PachydermAdapter:
             .astype({'size_bytes': 'int', 'committed': 'datetime64[ns, UTC]'})
 
     @retry
-    def get_logs(self, pipeline: Optional[str] = None, job: Optional[str] = None, master: bool = False) -> pd.DataFrame:
+    def get_logs(self, pipeline: Optional[str] = None, job: Optional[str] = None, master: bool = False, tail: int = 0) -> pd.DataFrame:
         pipeline = Pipeline(name=pipeline) if pipeline else None
         job = Job(id=job) if job else None
         if pipeline is None and job is None:
             raise ValueError('One of `pipeline` or `job` must be specified')
         res = []
-        logs = self.pps_stub.GetLogs(GetLogsRequest(pipeline=pipeline, job=job, data_filters=tuple(), master=master))
+        logs = self.pps_stub.GetLogs(GetLogsRequest(pipeline=pipeline, job=job, master=master, tail=tail))
         for msg in logs:
             message = msg.message.strip()
             if message:
@@ -449,6 +449,9 @@ class PachydermAdapter:
             for k in ['downloadTime', 'processTime', 'uploadTime']:
                 if k in info['stats']:
                     info['stats'][k] = float(info['stats'][k][:-1])
+            for k in ['downloadBytes', 'uploadBytes']:
+                if k in info['stats']:
+                    info['stats'][k] = int(info['stats'][k])
         return info
 
     @retry

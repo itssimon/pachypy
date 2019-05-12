@@ -276,14 +276,14 @@ class PrettyPachydermClient(PachydermClient):
         return PrettyTable(styler, dfr)
 
     def get_logs(self, pipelines: WildcardFilter = '*', datum: Optional[str] = None,
-                 last_job_only: bool = True, user_only: bool = False, master: bool = False) -> None:
-        df = super().get_logs(pipelines=pipelines, last_job_only=last_job_only, user_only=user_only, master=master)
+                 last_job_only: bool = True, user_only: bool = False, master: bool = False, tail: int = 0) -> None:
+        df = super().get_logs(pipelines=pipelines, last_job_only=last_job_only, user_only=user_only, master=master, tail=tail)
         job = None
         worker = None
         for _, row in df.iterrows():
             if row.job != job:
                 print()
-                cprint(f' Pipeline {row.pipeline} | Job {row.job} ', 'yellow', 'on_grey')
+                cprint(f' Pipeline {row.pipeline} ' + (f'| Job {row.job} ' if row.job else ''), 'yellow', 'on_grey')
             if row.worker != worker:
                 cprint(f' Worker {row.worker} ', 'white', 'on_grey')
             color = 'grey' if row.user else 'blue'
