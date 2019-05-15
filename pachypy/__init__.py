@@ -1,5 +1,6 @@
 # flake8: noqa
 
-from .client import PachydermClient
+from .adapter import PachydermError
+from .client import PachydermClient, PachydermClientError, DockerError
 from .pretty import PrettyPachydermClient
 from .registry import DockerRegistryAdapter, AmazonECRAdapter
