@@ -197,16 +197,16 @@ class PachydermClient:
         df = df.sort_values(['repo', 'started'], ascending=[True, False]).reset_index(drop=True)
         return df[['repo', 'commit', 'branches', 'size_bytes', 'started', 'finished', 'parent_commit']]
 
-    def list_files(self, repos: WildcardFilter, branch: Optional[str] = 'master', commit: Optional[str] = None,
-                   glob: str = '**', files_only: bool = True) -> pd.DataFrame:
+    def list_files(self, repos: WildcardFilter, glob: str = '**', branch: Optional[str] = 'master', commit: Optional[str] = None,
+                   files_only: bool = True) -> pd.DataFrame:
         """Get list of files as pandas DataFrame.
 
         Args:
             repos: Name pattern to filter repos to return files for. Supports shell-style wildcards.
+            glob: Glob pattern to filter files returned.
             branch: Branch to list files for. Defaults to 'master'.
             commit: Commit ID to return files for. Overrides `branch` if specified.
                 If specified, the repos parameter must only match the repo this commit ID belongs to.
-            glob: Glob pattern to filter files returned.
             files_only: Whether to return only files or include directories.
         """
         repo_names = self._list_repo_names(repos)
@@ -503,16 +503,16 @@ class PachydermClient:
             return content.decode(encoding)
         return content
 
-    def get_files(self, repo: str, path: str = '/', glob: str = '**', branch: Optional[str] = 'master', commit: Optional[str] = None,
-                  destination: Union[str, Path] = '.') -> None:
+    def get_files(self, repo: str, glob: str = '**', branch: Optional[str] = 'master', commit: Optional[str] = None,
+                  path: str = '/', destination: Union[str, Path] = '.') -> None:
         """Retrieves multiple files from a repository in PFS and writes them to a local directory.
 
         Args:
             repo: Repository to retrieve files from.
-            path: Path within repository in PFS to retrieve files from.
             glob: Glob pattern to filter files retrieved from `path`. Is interpreted relative to `path`.
             branch: Branch to retrieve files from.
             commit: Commit to retrieve files from. Overrides `branch` if specified.
+            path: Path within repository in PFS to retrieve files from.
             destination: Local path to write files to. Must be a directory. Will be created if it doesn't exist.
         """
         path = '/' + path.strip('/')
