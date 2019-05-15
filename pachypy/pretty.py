@@ -494,4 +494,4 @@ class PrettyPachydermClient(PachydermClient):
                 return x
         if 'leave' not in kwargs:
             kwargs['leave'] = False
-        return tqdm_notebook(x, **kwargs) if n > 2 else x
+        return tqdm_notebook(x, total=n, **kwargs) if n > 2 else x
