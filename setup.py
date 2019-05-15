@@ -33,7 +33,7 @@ setup(
         'tzlocal>=1.5.1',
     ],
     extras_require={
-        'docs':  [
+        'docs': [
             'sphinx>=2.0.0',
             'sphinx_autodoc_typehints>=1.6.0',
             'sphinx_rtd_theme>=0.4.3',
