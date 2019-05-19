@@ -67,10 +67,16 @@ class AmazonECRAdapter(DockerRegistryAdapter):
 
     def __init__(self, docker_client: docker.DockerClient):
         self.docker_client = docker_client
-        self.ecr_client = boto3.client('ecr')
+        self._ecr_client = None
+
+    @property
+    def ecr_client(self):
+        if self._ecr_client is None:
+            self._ecr_client = boto3.client('ecr')
+        return self._ecr_client
 
     def set_credentials(self, aws_access_key_id: str, aws_secret_access_key: str):
-        self.ecr_client = boto3.client('ecr', aws_access_key_id=aws_access_key_id, aws_secret_access_key=aws_secret_access_key)
+        self._ecr_client = boto3.client('ecr', aws_access_key_id=aws_access_key_id, aws_secret_access_key=aws_secret_access_key)
 
     def login(self, registry: str) -> None:
         response = self.ecr_client.get_authorization_token(registryIds=[registry[:12]])
