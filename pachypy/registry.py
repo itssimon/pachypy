@@ -35,7 +35,8 @@ class DockerRegistryAdapter:
             headers = {'X-Registry-Auth': header} if header else {}
             result = api._result(api._get(url, headers=headers), True)
             return str(result['Descriptor']['digest'])
-        except HTTPError:
+        except (HTTPError, AttributeError):
+            # TODO: AttributeError can be removed when https://github.com/docker/docker-py/pull/2346 is merged and released
             raise RegistryException(f"Image '{image}' not found in Docker registry '{registry}'")
 
     def push_image(self, image) -> str:

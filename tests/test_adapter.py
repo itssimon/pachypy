@@ -196,7 +196,6 @@ def await_job_completed_state(adapter: PachydermAdapter, pipeline_name, timeout=
     return state
 
 
-@pytest.mark.integtest
 def test_retry(adapter: PachydermAdapter):
     from grpc._channel import _Rendezvous
     from pachypy.adapter import retry
