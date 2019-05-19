@@ -1,9 +1,15 @@
 install:
 	pip install --upgrade .
 
-test:
+test-all:
 	pytest --cov-report term --cov-report xml --cov=pachypy/ -vv tests/
 	bash helper/upload_codecov.sh
+
+test-unit:
+	pytest -m "not integtest" -vv tests/
+
+test-integ:
+	pytest -m integtest -vv tests/
 
 build-docs:
 	$(MAKE) -C docs/ html

@@ -1,11 +1,11 @@
 import pytest
 
 
-@pytest.fixture(scope='module')
+@pytest.fixture(scope='function')
 def docker_registry():
     from docker import DockerClient
     from pachypy.registry import DockerRegistryAdapter
-    return DockerRegistryAdapter(DockerClient())
+    return DockerRegistryAdapter(DockerClient.from_env())
 
 
 @pytest.mark.integtest

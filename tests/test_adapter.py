@@ -239,10 +239,9 @@ def test_init(monkeypatch):
         assert adapter.host == 'another_test_host' and adapter.port == 30650
 
 
+@pytest.mark.integtest
 def test_check_connectivity():
     adapter = PachydermAdapter(host='host_that_does_not_exist')
-    assert adapter.check_connectivity() is False
-    adapter = PachydermAdapter(host='google.com')
     assert adapter.check_connectivity() is False
 
 

@@ -140,7 +140,7 @@ def client(pipeline_spec_files_path):
 @pytest.fixture(scope='module')
 def docker_registry():
     import docker
-    client = docker.DockerClient()
+    client = docker.DockerClient.from_env()
     try:
         container = client.containers.get('test_registry')
         if container.status != 'running':
@@ -268,7 +268,9 @@ def test_delete_job(client: PachydermClient, **mocks):
 
 @patch_commit_adapter()
 def test_commit_put_files(client: PachydermClient, **mocks):
-    mock_file = lambda f: os.path.join(os.path.dirname(__file__), 'mock', f)
+    def mock_file(f):
+        return os.path.join(os.path.dirname(__file__), 'mock', f)
+
     with client.commit('test_repo') as c:
         c.put_file(mock_file('list_commits.csv'))
         mocks['put_file_bytes'].assert_called_once()
@@ -370,6 +372,7 @@ def test_read_pipeline_specs(client: PachydermClient, pipeline_spec_files_path):
         client.read_pipeline_specs('*')
 
 
+@pytest.mark.integtest
 def test_build_push_image(client: PachydermClient, docker_registry):
     del docker_registry
     pipeline_specs = client.read_pipeline_specs('test_e_*')
