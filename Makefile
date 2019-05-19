@@ -1,8 +1,8 @@
 install:
 	pip install --upgrade .
 
-test-all:
-	pytest --cov-report term --cov-report xml --cov=pachypy/ -vv tests/
+test:
+	pytest --cov-report term --cov-report xml --cov=pachypy/ -vv tests/test_utils.py tests/test_pretty.py tests/test_client.py tests/test_registry.py tests/test_adapter.py
 	bash helper/upload_codecov.sh
 
 test-unit:
