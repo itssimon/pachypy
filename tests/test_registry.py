@@ -8,6 +8,7 @@ def docker_registry():
     return DockerRegistryAdapter(DockerClient())
 
 
+@pytest.mark.integtest
 def test_docker_get_image_digest(docker_registry):
     from pachypy.registry import RegistryException
     digest = docker_registry.get_image_digest('alpine:latest')

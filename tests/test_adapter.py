@@ -196,6 +196,7 @@ def await_job_completed_state(adapter: PachydermAdapter, pipeline_name, timeout=
     return state
 
 
+@pytest.mark.integtest
 def test_retry(adapter: PachydermAdapter):
     from grpc._channel import _Rendezvous
     from pachypy.adapter import retry
@@ -246,11 +247,13 @@ def test_check_connectivity():
     assert adapter.check_connectivity() is False
 
 
+@pytest.mark.integtest
 def test_get_version(adapter: PachydermAdapter):
     version = adapter.get_version()
     assert len(version.split('.')) == 3
 
 
+@pytest.mark.integtest
 def test_create_delete_repo(adapter: PachydermAdapter):
     repo_name = 'test_repo_a1b2c'
     delete_repo_if_exists(adapter, repo_name)
@@ -263,6 +266,7 @@ def test_create_delete_repo(adapter: PachydermAdapter):
     assert repo_name not in set(adapter.list_repo_names())
 
 
+@pytest.mark.integtest
 def test_create_update_delete_pipeline(adapter, pipeline_1):
     pipeline_name = pipeline_1['pipeline']['name']
 
@@ -287,6 +291,7 @@ def test_create_update_delete_pipeline(adapter, pipeline_1):
         adapter.delete_pipeline('pipeline_that_does_not_exist')
 
 
+@pytest.mark.integtest
 def test_list_pipelines(adapter: PachydermAdapter, pipeline_1, pipeline_2, pipeline_3, pipeline_4):
     df = adapter.list_pipelines()
     assert df.shape[0] >= 4
@@ -304,6 +309,7 @@ def test_list_pipelines(adapter: PachydermAdapter, pipeline_1, pipeline_2, pipel
     assert df.loc[df['pipeline'] == 'test_pipeline_4', 'input'].iloc[0] == '(test_pipeline_1/test:* ⨯ test_pipeline_2/test:*)'
 
 
+@pytest.mark.integtest
 def test_stop_start_pipeline(adapter: PachydermAdapter, pipeline_1):
     pipeline_name = pipeline_1['pipeline']['name']
     assert await_pipeline_new_state(adapter, pipeline_name, initial_state='starting') == 'running'
@@ -315,6 +321,7 @@ def test_stop_start_pipeline(adapter: PachydermAdapter, pipeline_1):
     assert await_pipeline_new_state(adapter, pipeline_name, initial_state='paused') == 'running'
 
 
+@pytest.mark.integtest
 def test_commit_context_manager(adapter: PachydermAdapter, repo):
     c = PachydermCommitAdapter(adapter, repo)
     assert c.commit is None and c.finished is False
@@ -335,6 +342,7 @@ def test_commit_context_manager(adapter: PachydermAdapter, repo):
     assert len(adapter.list_commits(repo)) == 1
 
 
+@pytest.mark.integtest
 def test_commit_put_file_bytes(adapter: PachydermAdapter, repo):
     with PachydermCommitAdapter(adapter, repo) as c:
         c.put_file_bytes('test_1', '/test_file_1')
@@ -372,16 +380,7 @@ def test_commit_put_file_bytes(adapter: PachydermAdapter, repo):
     assert 'test' not in adapter.list_branch_heads(repo)
 
 
-def test_commit_create_branch(adapter: PachydermAdapter, repo):
-    with PachydermCommitAdapter(adapter, repo) as c:
-        c.create_branch('test_branch_1')
-    adapter.create_branch(repo, c.commit, 'test_branch_2')
-    branch_heads = adapter.list_branch_heads(repo)
-    assert 'test_branch_1' in branch_heads and 'test_branch_2' in branch_heads
-    assert branch_heads['test_branch_1'] == branch_heads['master']
-    assert branch_heads['test_branch_2'] == branch_heads['master']
-
-
+@pytest.mark.integtest
 def test_commit_put_file_url(adapter: PachydermAdapter, repo):
     with PachydermCommitAdapter(adapter, repo, branch=None) as c:
         c.put_file_url('https://raw.githubusercontent.com/itssimon/pachypy/master/tests/mock/get_logs.csv', 'get_logs.csv')
@@ -393,6 +392,7 @@ def test_commit_put_file_url(adapter: PachydermAdapter, repo):
     assert len(adapter.list_branch_heads(repo)) == 0
 
 
+@pytest.mark.integtest
 def test_commit_flush(adapter: PachydermAdapter, pipeline_5):
     pipeline = pipeline_5['pipeline']['name']
     repo = pipeline_5['input']['pfs']['repo']
@@ -406,6 +406,18 @@ def test_commit_flush(adapter: PachydermAdapter, pipeline_5):
     assert int(res) == 20
 
 
+@pytest.mark.integtest
+def test_commit_create_branch(adapter: PachydermAdapter, repo):
+    with PachydermCommitAdapter(adapter, repo) as c:
+        c.create_branch('test_branch_1')
+    adapter.create_branch(repo, c.commit, 'test_branch_2')
+    branch_heads = adapter.list_branch_heads(repo)
+    assert 'test_branch_1' in branch_heads and 'test_branch_2' in branch_heads
+    assert branch_heads['test_branch_1'] == branch_heads['master']
+    assert branch_heads['test_branch_2'] == branch_heads['master']
+
+
+@pytest.mark.integtest
 def test_list_commits_files(adapter: PachydermAdapter, repo):
     assert len(adapter.list_branch_heads(repo)) == 0
     assert len(adapter.list_files(repo)) == 0
@@ -440,6 +452,7 @@ def test_list_commits_files(adapter: PachydermAdapter, repo):
         adapter.list_files(repo, branch=None, commit=None)
 
 
+@pytest.mark.integtest
 def test_list_jobs_get_logs(adapter: PachydermAdapter, pipeline_2):
     pipeline_name = pipeline_2['pipeline']['name']
     tick_repo_name = pipeline_name + '_' + pipeline_2['input']['cron']['name']
@@ -489,6 +502,7 @@ def test_list_jobs_get_logs(adapter: PachydermAdapter, pipeline_2):
     assert len(adapter.list_jobs(pipeline=pipeline_name)) == 0
 
 
+@pytest.mark.integtest
 def test_get_file(adapter: PachydermAdapter, repo):
     with PachydermCommitAdapter(adapter, repo) as c:
         c.put_file_bytes(b'123', '/test_file_1')
@@ -499,6 +513,7 @@ def test_get_file(adapter: PachydermAdapter, repo):
     assert next(adapter.get_file(repo, '/test_file_2', commit=c.commit)) == b'321'
 
 
+@pytest.mark.integtest
 def test_pipeline_input_cron_specs(adapter: PachydermAdapter, pipeline_5, pipeline_6):
     assert len(adapter.get_pipeline_cron_specs(pipeline_5['pipeline']['name'])) == 0
     assert len(adapter.get_pipeline_cron_specs(pipeline_6['pipeline']['name'])) == 2
