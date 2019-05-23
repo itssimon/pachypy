@@ -708,20 +708,23 @@ class PachydermClient:
         pipeline_build_options = pipeline_spec['transform'].get('docker_build_options', {})
         build_options = {**default_build_options, **pipeline_build_options, **(build_options or {})}
 
-        if 'dockerfile_path' in pipeline_spec['transform']:
+        if 'dockerfile_path' in pipeline_spec['transform'] and 'docker_build_context' not in pipeline_spec['transform']:
             dockerfile_path = pipeline_spec['transform']['dockerfile_path']
             self.logger.info(f"Building Docker image '{image}' from '{dockerfile_path}' ...")
             build_stream = self.docker_client.api.build(path=str(dockerfile_path), tag=image, decode=True, **build_options)
-        elif 'dockerfile' in pipeline_spec['transform']:
+        elif 'dockerfile' in pipeline_spec['transform'] or 'dockerfile_path' in pipeline_spec['transform']:
             with tempfile.SpooledTemporaryFile(max_size=1000 ** 2) as tmp:
                 with tarfile.open(fileobj=tmp, mode='w') as tar:
-                    dockerfile = io.BytesIO(pipeline_spec['transform']['dockerfile'].encode('utf-8'))
-                    dockerfile_info = tarfile.TarInfo(name='Dockerfile')
-                    dockerfile_info.size = len(dockerfile.getvalue())
-                    tar.addfile(dockerfile_info, fileobj=dockerfile)
+                    if 'dockerfile' in pipeline_spec['transform']:
+                        dockerfile = io.BytesIO(pipeline_spec['transform']['dockerfile'].encode('utf-8'))
+                        dockerfile_info = tarfile.TarInfo(name='Dockerfile')
+                        dockerfile_info.size = len(dockerfile.getvalue())
+                        tar.addfile(dockerfile_info, fileobj=dockerfile)
+                    else:
+                        tar.add(pipeline_spec['transform']['dockerfile_path'] / 'Dockerfile', arcname='Dockerfile', recursive=False)
                     if 'docker_build_context' in pipeline_spec['transform']:
-                        for path in pipeline_spec['transform']['docker_build_context']:
-                            tar.add(path, arcname=os.path.basename(path))
+                        for source_path, context_path in pipeline_spec['transform']['docker_build_context']:
+                            tar.add(source_path, arcname=context_path)
                 tmp.flush()
                 tmp.seek(0)
                 self.logger.info(f"Building Docker image '{image}' ...")
@@ -771,10 +774,15 @@ class PachydermClient:
             if 'docker_build_context' in pipeline['transform']:
                 paths = []
                 for p in pipeline['transform']['docker_build_context']:
-                    path = Path(p)
-                    if not path.is_absolute():
-                        path = pipeline['_file'].parent / path
-                    paths.append(path.resolve())
+                    if ':' in p:
+                        source_path, context_path = p.split(':', 1)
+                        source_path = Path(source_path)
+                    else:
+                        source_path = Path(p)
+                        context_path = source_path.name
+                    if not source_path.is_absolute():
+                        source_path = pipeline['_file'].parent / source_path
+                    paths.append((source_path.resolve(), context_path))
                 pipeline['transform']['docker_build_context'] = paths
         return pipeline_specs
 
