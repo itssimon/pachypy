@@ -504,7 +504,7 @@ class PachydermClient:
         return content
 
     def get_files(self, repo: str, glob: str = '**', branch: Optional[str] = 'master', commit: Optional[str] = None,
-                  path: str = '/', destination: Union[str, Path] = '.') -> None:
+                  path: str = '/', destination: Union[str, Path] = '.', ignore_existing: bool = False) -> None:
         """Retrieves multiple files from a repository in PFS and writes them to a local directory.
 
         Args:
@@ -514,6 +514,7 @@ class PachydermClient:
             commit: Commit to retrieve files from. Overrides `branch` if specified.
             path: Path within repository in PFS to retrieve files from.
             destination: Local path to write files to. Must be a directory. Will be created if it doesn't exist.
+            ignore_existing: Whether to ignore or overwrite files that already exist locally.
         """
         path = '/' + path.strip('/')
         glob = path + '/' + glob
@@ -522,6 +523,8 @@ class PachydermClient:
         files = files[files['type'] == 'file']
         for _, row in self._progress(files.iterrows(), n=len(files), unit='file'):
             local_path = destination / os.path.relpath(row['path'], path)
+            if ignore_existing and local_path.exists():
+                continue
             os.makedirs(local_path.parent, exist_ok=True)
             self.get_file(repo, path=row['path'], commit=row['commit'], destination=local_path)
             self.logger.info(f"Downloaded '{os.path.basename(row['path'])}' to '{local_path.parent}'")
