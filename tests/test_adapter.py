@@ -175,7 +175,7 @@ def delete_pipeline_if_exists(adapter: PachydermAdapter, pipeline_name):
         pass
 
 
-def await_pipeline_new_state(adapter: PachydermAdapter, pipeline_name, initial_state='starting', timeout=30):
+def await_pipeline_new_state(adapter: PachydermAdapter, pipeline_name, initial_state='starting', timeout=60):
     start_time = time.time()
     state = initial_state
     while state == initial_state and time.time() - start_time < timeout:
