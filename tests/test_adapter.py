@@ -96,13 +96,13 @@ def pipeline_4(adapter: PachydermAdapter):
         },
         'input': {
             'cross': [{
-                'atom': {
+                'pfs': {
                     'repo': 'test_pipeline_1',
                     'branch': 'test',
                     'glob': '*'
                 }
             }, {
-                'atom': {
+                'pfs': {
                     'repo': 'test_pipeline_2',
                     'branch': 'test',
                     'glob': '*'
@@ -188,7 +188,7 @@ def await_pipeline_new_state(adapter: PachydermAdapter, pipeline_name, initial_s
 def await_job_completed_state(adapter: PachydermAdapter, pipeline_name, timeout=300):
     start_time = time.time()
     state = 'starting'
-    while state in {'unknown', 'starting', 'running'} and time.time() - start_time < timeout:
+    while state in {'unknown', 'starting', 'running', 'merging'} and time.time() - start_time < timeout:
         time.sleep(3)
         jobs = adapter.list_jobs(pipeline=pipeline_name, n=1)
         if len(jobs):
@@ -509,6 +509,22 @@ def test_get_file(adapter: PachydermAdapter, repo):
     assert next(adapter.get_file(repo, '/test_file_1')) == b'123'
     assert next(adapter.get_file(repo, '/test_file_2', branch='test')) == b'321'
     assert next(adapter.get_file(repo, '/test_file_2', commit=c.commit)) == b'321'
+
+
+@pytest.mark.integtest
+def test_run_pipeline(adapter: PachydermAdapter, pipeline_2):
+    pipeline_name = pipeline_2['pipeline']['name']
+    tick_repo_name = pipeline_name + '_' + pipeline_2['input']['cron']['name']
+    assert await_pipeline_new_state(adapter, pipeline_name, initial_state='starting') == 'running'
+
+    with PachydermCommitAdapter(adapter, tick_repo_name) as c:
+        c.put_file_bytes(b'0', 'time')
+    assert await_job_completed_state(adapter, pipeline_name) == 'success'
+
+    adapter.run_pipeline(pipeline_name)
+    assert await_job_completed_state(adapter, pipeline_name) == 'success'
+    jobs = adapter.list_jobs(pipeline=pipeline_name)
+    assert len(jobs) == 2
 
 
 @pytest.mark.integtest

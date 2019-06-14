@@ -5,7 +5,7 @@ with open('README.md', 'r') as fh:
 
 setup(
     name='pachypy',
-    version='0.1.4',
+    version='0.1.5',
     author='Simon Gurcke',
     description='Python client library for Pachyderm',
     long_description=long_description,
@@ -25,7 +25,7 @@ setup(
         'ipython>=7.4.0',
         'Jinja2>=2.10.1',
         'pandas>=0.24.2',
-        'python_pachyderm>=1.8.6',
+        'python_pachyderm>=1.9.0',
         'pytz>=2018.9',
         'pyyaml>=3.13',
         'termcolor>=1.1.0',

@@ -613,6 +613,21 @@ class PachydermClient:
             self.logger.info(f'Stopped pipeline {pipeline}')
         return pipelines
 
+    def run_pipelines(self, pipelines: WildcardFilter) -> List[str]:
+        """Rerun the latest jobs for pipelines.
+
+        Args:
+            pipelines: Pattern to filter pipelines by name. Supports shell-style wildcards.
+
+        Returns:
+            Names of ran pipelines.
+        """
+        pipelines = self._list_pipeline_names(pipelines)
+        for pipeline in pipelines:
+            self.adapter.run_pipeline(pipeline)
+            self.logger.info(f'Ran pipeline {pipeline}')
+        return pipelines
+
     def trigger_pipeline(self, pipeline: str, flush: bool = False) -> None:
         """Triggers a pipeline with a cron input by committing a timestamp file into its cron input repository.
 

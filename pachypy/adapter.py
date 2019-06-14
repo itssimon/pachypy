@@ -21,7 +21,7 @@ from python_pachyderm.client.pfs.pfs_pb2_grpc import APIStub as PfsAPIStub
 from python_pachyderm.client.pps.pps_pb2 import (
     Pipeline, Job, Input, Transform, Datum,
     ListPipelineRequest, ListJobRequest, ListDatumRequest, GetLogsRequest, DeleteJobRequest,
-    CreatePipelineRequest, DeletePipelineRequest, StartPipelineRequest, StopPipelineRequest,
+    CreatePipelineRequest, DeletePipelineRequest, StartPipelineRequest, StopPipelineRequest, RunPipelineRequest,
     InspectPipelineRequest, InspectJobRequest, InspectDatumRequest,
     FAILED as DATUM_FAILED, SUCCESS as DATUM_SUCCESS, SKIPPED as DATUM_SKIPPED, STARTING as DATUM_STARTING,
     JOB_STARTING, JOB_RUNNING, JOB_MERGING, JOB_SUCCESS, JOB_FAILURE, JOB_KILLED,
@@ -250,9 +250,6 @@ class PachydermAdapter:
                 return '(' + ' ⨯ '.join([input_string(j) for j in i.cross]) + ')'
             elif i.union:
                 return '(' + ' ∪ '.join([input_string(j) for j in i.union]) + ')'
-            elif i.atom.name:
-                name = i.atom.name + ('/' + i.atom.branch if i.atom.branch != 'master' else '')
-                return str(name + ':' + i.atom.glob)
             elif i.pfs.name:
                 name = i.pfs.name + ('/' + i.pfs.branch if i.pfs.branch != 'master' else '')
                 return str(name + ':' + i.pfs.glob)
@@ -268,8 +265,6 @@ class PachydermAdapter:
             if cross_or_union:
                 for j in cross_or_union:
                     yield from input_repos(j)
-            elif i.atom.repo:
-                yield i.atom.repo
             elif i.pfs.repo:
                 yield i.pfs.repo
 
@@ -556,6 +551,10 @@ class PachydermAdapter:
         response = self.pfs_stub.GetFile(GetFileRequest(file=file))
         for content in response:
             yield content.value
+
+    @retry
+    def run_pipeline(self, pipeline: str) -> None:
+        self.pps_stub.RunPipeline(RunPipelineRequest(pipeline=Pipeline(name=pipeline)))
 
     @retry
     def get_version(self) -> str:

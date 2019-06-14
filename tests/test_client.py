@@ -104,6 +104,7 @@ def patch_adapter(empty=False):
         delete_pipeline=DEFAULT,
         start_pipeline=DEFAULT,
         stop_pipeline=DEFAULT,
+        run_pipeline=DEFAULT,
         delete_job=DEFAULT,
         get_pipeline_cron_specs=DEFAULT
     )
@@ -402,13 +403,14 @@ def test_create_update_delete_pipelines(client: PachydermClient, **mocks):
 
 
 @patch_adapter()
-def test_stop_start_pipelines(client: PachydermClient, **mocks):
+def test_stop_start_run_pipelines(client: PachydermClient, **mocks):
     del mocks
     list_pipeline_names = 'pachypy.adapter.PachydermAdapter.list_pipeline_names'
     pipelines = ['test_a_pipeline_1', 'test_a_pipeline_2']
     with patch(list_pipeline_names, MagicMock(return_value=pipelines)):
         assert client.stop_pipelines('test_a*') == pipelines
         assert client.start_pipelines('test_a*') == pipelines
+        assert client.run_pipelines('test_a*') == pipelines
 
 
 def test_add_image_digest(client: PachydermClient):
