@@ -467,6 +467,7 @@ def test_list_jobs_get_logs(adapter: PachydermAdapter, pipeline_2):
     assert pipeline_info['version'] == 1
     assert pipeline_info['createdAt'].tzinfo is not None
 
+    assert len(adapter.list_jobs()) >= 1
     jobs = adapter.list_jobs(pipeline=pipeline_name)
     assert len(jobs) == 1
     job = jobs['job'].iloc[0]

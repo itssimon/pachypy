@@ -311,7 +311,8 @@ class PachydermAdapter:
     def list_jobs(self, pipeline: Optional[str] = None, n: int = 20) -> pd.DataFrame:
         i = 1
         res = []
-        jobs_stream = self.pps_stub.ListJobStream(ListJobRequest(pipeline=Pipeline(name=pipeline)))
+        pipeline_obj = Pipeline(name=pipeline) if pipeline is not None else None
+        jobs_stream = self.pps_stub.ListJobStream(ListJobRequest(pipeline=pipeline_obj))
         for job in jobs_stream:
             res.append({
                 'job': job.job.id,
