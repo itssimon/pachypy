@@ -504,7 +504,7 @@ class PachydermClient:
         return content
 
     def get_files(self, repo: str, glob: str = '**', branch: Optional[str] = 'master', commit: Optional[str] = None,
-                  path: str = '/', destination: Union[str, Path] = '.', ignore_existing: bool = False) -> None:
+                  path: str = '/', destination: Union[str, Path] = '.', ignore_existing: bool = False, verbose: bool = False) -> None:
         """Retrieves multiple files from a repository in PFS and writes them to a local directory.
 
         Args:
@@ -515,6 +515,7 @@ class PachydermClient:
             path: Path within repository in PFS to retrieve files from.
             destination: Local path to write files to. Must be a directory. Will be created if it doesn't exist.
             ignore_existing: Whether to ignore or overwrite files that already exist locally.
+            verbose: Whether to log which files where downloaded.
         """
         path = '/' + path.strip('/')
         glob = path + '/' + glob
@@ -527,7 +528,8 @@ class PachydermClient:
                 continue
             os.makedirs(local_path.parent, exist_ok=True)
             self.get_file(repo, path=row['path'], commit=row['commit'], destination=local_path)
-            self.logger.info(f"Downloaded '{os.path.basename(row['path'])}' to '{local_path.parent}'")
+            if verbose:
+                self.logger.info(f"Downloaded '{os.path.basename(row['path'])}' to '{local_path.parent}'")
 
     def create_pipelines(self, pipelines: WildcardFilter = '*', pipeline_specs: Optional[List[dict]] = None,
                          recreate: bool = False, build_options: Optional[dict] = None) -> PipelineChanges:
