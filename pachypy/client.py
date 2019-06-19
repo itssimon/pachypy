@@ -760,6 +760,7 @@ class PachydermClient:
         self._built_images.add(image)
 
         if push:
+            self.logger.info(f"Pushing image to registry ...")
             registry_adapter = self._get_registry_adapter(image)
             digest = registry_adapter.push_image(image)
             self._image_digests[image] = digest
