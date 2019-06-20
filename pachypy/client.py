@@ -515,7 +515,7 @@ class PachydermClient:
             path: Path within repository in PFS to retrieve files from.
             destination: Local path to write files to. Must be a directory. Will be created if it doesn't exist.
             ignore_existing: Whether to ignore or overwrite files that already exist locally.
-            verbose: Whether to log which files where downloaded.
+            verbose: Whether to log which files were downloaded.
         """
         path = '/' + path.strip('/')
         glob = path + '/' + glob
