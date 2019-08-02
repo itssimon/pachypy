@@ -460,6 +460,11 @@ class PachydermAdapter:
             for k in ['downloadBytes', 'uploadBytes']:
                 if k in info['stats']:
                     info['stats'][k] = int(info['stats'][k])
+        if 'parallelismSpec' in info:
+            if 'constant' in info['parallelismSpec']:
+                info['parallelismSpec']['constant'] = int(info['parallelismSpec']['constant'])
+            if 'coefficient' in info['parallelismSpec']:
+                info['parallelismSpec']['coefficient'] = float(info['parallelismSpec']['coefficient'])
         return info
 
     @retry
