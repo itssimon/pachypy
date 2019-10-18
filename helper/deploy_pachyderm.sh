@@ -12,7 +12,7 @@ REQUIRE=("kubectl" "pachctl")
 for c in "${REQUIRE[@]}"; do
     if ! command -v "$c" >/dev/null 2>&1; then
         echo -e "${RED}${c} is not available. Exiting.${NC}"
-        exit
+        exit 1
     fi
 done
 
@@ -27,7 +27,7 @@ else
 
     if ! command -v minikube >/dev/null 2>&1; then
         echo -e "${RED}minikube is not available. Exiting.${NC}"
-        exit
+        exit 1
     fi
 
     if ! minikube status | grep -q "Running"; then
