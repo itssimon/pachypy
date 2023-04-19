@@ -3,7 +3,6 @@
 [![Python 3.6](https://img.shields.io/badge/python-3.6+-blue.svg)](#)
 [![Documentation Status](https://readthedocs.org/projects/pachypy/badge/?version=latest)](https://pachypy.readthedocs.io/en/latest/?badge=latest)
 [![Coverage Status](https://img.shields.io/codecov/c/github/itssimon/pachypy.svg)](https://codecov.io/gh/itssimon/pachypy)
-[![Requirements Status](https://requires.io/github/itssimon/pachypy/requirements.svg?branch=master)](https://requires.io/github/itssimon/pachypy/requirements/?branch=master)
 [![Stability Status](https://img.shields.io/badge/stability-alpha-yellow.svg)](#)
 [![Project Status: Abandoned – Initial development has started, but there has not yet been a stable, usable release; the project has been abandoned and the author(s) do not intend on continuing development.](https://www.repostatus.org/badges/latest/abandoned.svg)](https://www.repostatus.org/#abandoned)
 
